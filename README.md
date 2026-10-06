@@ -30,11 +30,16 @@ Requires Node 22.13 or newer.
 
 ```bash
 npm install
-cp .env.example .env.local   # then add ANTHROPIC_API_KEY and/or GEMINI_API_KEY
+cp .env.example .env.local   # then add MISTRAL_API_KEY (free), and optionally Claude/Gemini keys
 npm run dev                  # http://localhost:3000
 ```
 
-You need at least one of these keys. Both stay on the server side.
+You need at least one of these keys. They stay on the server side.
+- **Mistral (the default, free):** `MISTRAL_API_KEY`, from console.mistral.ai. The free *Experiment* plan works:
+  costs show as $0, and the app paces requests to about one per second to stay within its limits. A debate makes
+  about 41 requests, so it takes a few minutes longer than on a paid plan. The free plan requires letting Mistral use
+  your prompts for training. Your actual limits are at admin.mistral.ai/plateforme/limits. If you get rate-limit
+  errors, raise `MISTRAL_MIN_INTERVAL_MS` in `.env.local`; on a paid plan, set `MISTRAL_TIER=paid`.
 - **Claude:** `ANTHROPIC_API_KEY`, a Console API key from console.anthropic.com. A Claude.ai subscription does not
   work.
 - **Gemini:** `GEMINI_API_KEY`, a Gemini API key from aistudio.google.com/apikey.
@@ -44,18 +49,20 @@ The database is created automatically in `data/parlament.db`.
 ## Choosing the AI model
 
 The ask form has an **AI-modell** picker:
-- **Enligt ledamotsfilerna (default):** each member uses the `model:` in their own file. A sitting can therefore mix
-  Claude and Gemini, e.g. one party on Gemini and the rest on Claude.
-- **A Claude model (Opus 5.5, Sonnet 5.5):** every leader and the Speaker use it for this sitting.
+- **Enligt ledamotsfilerna (default):** each member uses the `model:` in their own file. The files ship with
+  `mistral-large-latest`. A sitting can mix providers, e.g. one party on Gemini and the rest on Mistral.
+- **A Mistral model (Large, Medium, Small):** every leader and the Speaker use it for this sitting. With a working key
+  the list comes from Mistral's API (the current `-latest` chat models).
+- **A Claude model (Opus 5.5, Sonnet 5.5):** the same, with Claude.
 - **A Gemini model:** the same, with Gemini. With a working key the list comes from the Gemini API itself (the text
   models your key can use, newest first). Without one, it shows Gemini 3.1 Pro and Gemini 3.8 Flash.
 
 Models whose key is missing are greyed out. A key that is set but rejected shows a warning at the top of the page.
 The sitting shows which model it ran on ("AI: …"), and the cost estimate follows the choice.
 
-Both providers get the same prompts. Gemini 3 maps the member's `effort` to its thinking level (low, medium, high),
-and caches the shared brief and debate implicitly. Gemini models missing from the price table, for example a new
-preview, are priced like their family (Pro or Flash), so their cost is approximate.
+All providers get the same prompts. A member's `effort` becomes Gemini's thinking level, or Mistral's reasoning
+effort on models that support it. Models missing from the price table, such as a new preview or a dated version, are
+priced like their family (Pro/Flash, Large/Medium/Small), so their cost is approximate.
 
 ## Changing the members
 
@@ -112,8 +119,9 @@ A member who fails a round is dropped from later rounds. At least 60% of the mem
 **Talmannen avgör** mode there is no preliminary vote; the Speaker picks the best proposal directly, and the main
 vote still happens.
 
-**Cost:** a question with 8 Opus members makes about 41 API calls. The app estimates about $2 before you run it,
-and shows the real cost afterwards. Sonnet roughly halves that, and Gemini Flash is cheaper still. To change the number of
+**Cost:** a question makes about 41 API calls. On Mistral's free plan that costs nothing. With 8 Claude Opus members
+the app estimates about $2 before you run it, and shows the real cost afterwards. Sonnet roughly halves that, and
+Gemini Flash and paid Mistral cost less still. To change the number of
 rebuttal rounds, set `DEBATE_ROUNDS` in `src/config/models.ts`.
 
 **Sound** is off by default. Turn it on with the "Ljud" button in the header: the gavel knocks at the start of each
@@ -128,7 +136,7 @@ with no audio files.
 | `PARLAMENT_FAKE=1 npm run dev` | Offline with canned answers (no key, no cost, separate database). PowerShell: `$env:PARLAMENT_FAKE="1"; npm run dev` |
 | `npm test` | Unit tests (never call the API) |
 | `npm run test:e2e` | Browser tests in fake mode |
-| `npm run test:live` | One short real debate with 3 Sonnet members (well under $1), plus one on Gemini Flash if `GEMINI_API_KEY` is set |
+| `npm run test:live` | Short real debates: Claude Sonnet (well under $1), plus Gemini Flash and Mistral Small if their keys are set |
 | `npm run lint` / `npm run typecheck` | Checks |
 
 See `ROADMAP.md` for what is done and the defaults chosen along the way.

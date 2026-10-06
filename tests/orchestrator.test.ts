@@ -25,7 +25,8 @@ describe("runSession (fake provider)", () => {
     expect(r.tally).toBeDefined();
     expect(r.verdict).toContain("## Beslut");
     expect(r.finalTally).toMatchObject({ passed: true, franvarande: 0 });
-    expect(r.totalCostUsd).toBeGreaterThan(0);
+    expect(r.usage).toHaveLength(24 + 8 + 1 + 8);
+    expect(r.totalCostUsd).toBe(0); // the member files run on Mistral's free tier
   });
 
   it("gives nobody a transcript in the opening, and everyone the full named transcript later", async () => {

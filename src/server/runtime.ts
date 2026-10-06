@@ -7,10 +7,11 @@ import { getBrief, maxSittingNumber } from "../db/queries";
 import { runSession, type SessionEvent } from "../core/orchestrator";
 import { ClaudeProvider, checkApiKey } from "../providers/claude";
 import { GeminiProvider, listGeminiModels } from "../providers/gemini";
+import { MistralProvider, listMistralModels } from "../providers/mistral";
 import { RouterProvider } from "../providers/router";
 import { FakeProvider } from "../providers/fake";
 import { loadMembers, type LoadedMembers } from "../members/load";
-import { loadEnv, MissingApiKeyError, MissingGeminiKeyError } from "../config/env";
+import { loadEnv, MissingApiKeyError, MissingGeminiKeyError, MissingMistralKeyError, mistralTier } from "../config/env";
 import { DEBATE_ROUNDS } from "../config/models";
 import { toMemberView, type MemberView } from "../core/view";
 import { riksmote as riksmoteOf } from "../core/riksdag";
@@ -69,7 +70,7 @@ export function getProvider(): ParlamentProvider {
   // Each call goes to Claude or Gemini depending on the member's model.
   state.provider ??= isFake()
     ? new FakeProvider({ chunkDelayMs: 15 })
-    : new RouterProvider({ anthropic: () => new ClaudeProvider(), google: () => new GeminiProvider() });
+    : new RouterProvider({ anthropic: () => new ClaudeProvider(), google: () => new GeminiProvider(), mistral: () => new MistralProvider() });
   return state.provider;
 }
 
@@ -96,22 +97,36 @@ async function check(fn: () => Promise<unknown>, missingType: new () => Error): 
 }
 
 /**
- * Startup check of both keys: one cheap Models API call each (the Gemini call also lists the models the key can
+ * Startup check of every key: one cheap Models API call each (the Gemini call also lists the models the key can
  * use). Cached; pass recheck to try again after fixing .env.local.
  */
 export function getKeyStatus(recheck = false): Promise<KeyStatus> {
   if (recheck || !state.keyStatus) {
     state.keyStatus = (async (): Promise<KeyStatus> => {
       const ok: ProviderState = { ok: true, missing: false, error: null };
-      if (isFake()) return { fake: true, ok: true, providers: { anthropic: ok, google: ok }, geminiModels: null };
+      const tier = mistralTier();
+      if (isFake()) {
+        return { fake: true, ok: true, providers: { anthropic: ok, google: ok, mistral: ok }, geminiModels: null, mistralModels: null, mistralTier: tier };
+      }
       let geminiModels: KeyStatus["geminiModels"] = null;
-      const [anthropic, google] = await Promise.all([
+      let mistralModels: KeyStatus["mistralModels"] = null;
+      const [anthropic, google, mistral] = await Promise.all([
         check(() => checkApiKey(), MissingApiKeyError),
         check(async () => {
           geminiModels = await listGeminiModels();
         }, MissingGeminiKeyError),
+        check(async () => {
+          mistralModels = await listMistralModels();
+        }, MissingMistralKeyError),
       ]);
-      return { fake: false, ok: anthropic.ok || google.ok, providers: { anthropic, google }, geminiModels };
+      return {
+        fake: false,
+        ok: anthropic.ok || google.ok || mistral.ok,
+        providers: { anthropic, google, mistral },
+        geminiModels,
+        mistralModels,
+        mistralTier: tier,
+      };
     })();
   }
   return state.keyStatus;

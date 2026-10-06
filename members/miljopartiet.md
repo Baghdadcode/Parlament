@@ -10,7 +10,7 @@ seats: 18          # mandat efter valet 2022, uppdatera till 2026 års resultat
 placement: 3        # plats i kammardiagrammet, vänster till höger
 enabled: true
 order: 7
-model: claude-opus-5-5
+model: mistral-large-latest
 effort: medium
 ---
 <!-- Miljöpartiet har två språkrör: Amanda Lind (sedan 2024) och Daniel Helldén (sedan 2023).

@@ -1,7 +1,6 @@
 import { Markdown } from "../../components/Markdown";
 import { PartyBadge } from "../../components/PartyChip";
 import { getMembersDir } from "../../config/env";
-import { modelLabel } from "../../config/models";
 import { getMembers } from "../../server/runtime";
 import type { MemberDef } from "../../core/types";
 
@@ -51,7 +50,7 @@ function MemberCard({ member: m }: { member: MemberDef }) {
         {m.role === "talman" && <span className="rounded bg-zinc-200 px-1.5 text-[11px] dark:bg-zinc-800">talman</span>}
         {!m.enabled && <span className="rounded bg-zinc-200 px-1.5 text-[11px] dark:bg-zinc-800">sitter över</span>}
         <span className="ml-auto font-mono text-[11px] text-zinc-400">
-          {m.file} · {modelLabel(m.model)} · {m.effort}
+          {m.file} · {m.effort}
         </span>
       </summary>
       <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">

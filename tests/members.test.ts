@@ -36,7 +36,7 @@ describe("shipped member files", () => {
       expect(m.persona.length).toBeGreaterThan(200);
       expect(m.persona).not.toContain("<!--");
       expect(m.color).toMatch(/^#/);
-      expect(m.model).toMatch(/^claude-/);
+      expect(m.model).toBe("mistral-large-latest");
     }
   });
 });
@@ -50,7 +50,7 @@ describe("parseMemberFile", () => {
       short: "T",
       role: "ledamot",
       enabled: true,
-      model: "claude-opus-5-5",
+      model: "mistral-large-latest",
       effort: "medium",
       persona: "Hej.",
       title: "Partiledare",

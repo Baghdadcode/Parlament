@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ClaudeProvider, checkApiKey } from "../src/providers/claude";
 import { GeminiProvider, listGeminiModels } from "../src/providers/gemini";
+import { MistralProvider, listMistralModels } from "../src/providers/mistral";
 import { runSession } from "../src/core/orchestrator";
 import { loadMembers } from "../src/members/load";
 import { loadEnv } from "../src/config/env";
@@ -17,7 +18,7 @@ describe.skipIf(!process.env.LIVE)("live smoke test (real API)", () => {
     const three = members.slice(0, 3).map((m) => ({ ...m, model: "claude-sonnet-5-5" as const, effort: "low" as const }));
     const brief = `Bakgrund om elmarknaden.\n${"Elpriser, elområden, kärnkraft, vindkraft och överföring. ".repeat(500)}`;
     const result = await runSession(
-      { question: "Ska Sverige slopa elområdena? Svara kort.", brief, members: three, talman, mode: "full", rounds: 1 },
+      { question: "Ska Sverige slopa elområdena? Svara kort.", brief, members: three, talman: { ...talman, model: "claude-sonnet-5-5" }, mode: "full", rounds: 1 },
       new ClaudeProvider(),
     );
     expect(result.state).toBe("done");
@@ -46,4 +47,22 @@ describe.skipIf(!process.env.LIVE || !(process.env.GEMINI_API_KEY ?? process.env
     expect(result.state).toBe("done");
     expect(result.finalTally?.passed).not.toBeUndefined();
   }, 600_000);
+});
+
+// Opt-in, and only when a Mistral key is configured. Works on the free tier (requests are paced).
+describe.skipIf(!process.env.LIVE || !process.env.MISTRAL_API_KEY)("live smoke test (Mistral API)", () => {
+  it("lists models and runs a short debate on Mistral Small", async () => {
+    const models = await listMistralModels();
+    expect(models.length).toBeGreaterThan(0);
+    const model = models.find((m) => m.id === "mistral-small-latest")?.id ?? models[0]!.id;
+    const { members, talman } = loadMembers("members");
+    const three = members.slice(0, 3).map((m) => ({ ...m, model, effort: "low" as const }));
+    const result = await runSession(
+      { question: "Ska Sverige slopa elområdena? Svara kort.", members: three, talman: { ...talman, model }, mode: "full", rounds: 1 },
+      new MistralProvider(),
+    );
+    console.log(`Mistral ${model}: cost $${result.totalCostUsd.toFixed(4)}`);
+    expect(result.state).toBe("done");
+    expect(result.finalTally?.passed).not.toBeUndefined();
+  }, 900_000);
 });

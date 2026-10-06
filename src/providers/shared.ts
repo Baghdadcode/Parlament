@@ -52,6 +52,19 @@ export class Semaphore {
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Spaces out request starts, for providers that limit requests per second (Mistral's free tier). */
+export class Pacer {
+  private nextAt = 0;
+  constructor(private readonly intervalMs: number) {}
+  async wait(): Promise<void> {
+    if (this.intervalMs <= 0) return;
+    const now = Date.now();
+    const at = Math.max(now, this.nextAt);
+    this.nextAt = at + this.intervalMs;
+    if (at > now) await sleep(at - now);
+  }
+}
+
 /** One model call, independent of the provider that makes it. */
 export interface CallOptions {
   stage: Stage;

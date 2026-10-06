@@ -8,12 +8,14 @@ export async function register() {
     for (const [name, s] of [
       ["Claude", status.providers.anthropic],
       ["Gemini", status.providers.google],
+      ["Mistral", status.providers.mistral],
     ] as const) {
       if (s.ok) console.log(`[parlament] ${name}: key OK.`);
       else if (s.missing) console.log(`[parlament] ${name}: no key (models greyed out in the picker).`);
       else console.error(`[parlament] ${name}: key check failed: ${s.error}`);
     }
     if (status.geminiModels) console.log(`[parlament] Gemini models: ${status.geminiModels.map((m) => m.id).join(", ")}`);
+    if (status.mistralModels) console.log(`[parlament] Mistral models (${status.mistralTier} tier): ${status.mistralModels.map((m) => m.id).join(", ")}`);
   }
   const members = getMembers();
   if (!members.ok) console.error(`[parlament] Member files: ${members.error}`);

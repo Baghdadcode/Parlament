@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   try {
     const input = await readJson(req, schema);
     const status = await getKeyStatus();
-    if (!status.ok) return json({ error: "Ingen AI-nyckel fungerar. Lägg ANTHROPIC_API_KEY eller GEMINI_API_KEY i .env.local." }, 412);
+    if (!status.ok) return json({ error: "Ingen AI-nyckel fungerar. Lägg MISTRAL_API_KEY, ANTHROPIC_API_KEY eller GEMINI_API_KEY i .env.local." }, 412);
     return json({ id: await startSession(input) }, 202);
   } catch (err) {
     if (err instanceof ModelUnavailableError) return json({ error: err.message }, 412);

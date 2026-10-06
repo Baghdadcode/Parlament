@@ -42,8 +42,15 @@ Drizzle on `node:sqlite`.
   genitive).
 - **Sitting numbers:** `riksmöte:N` counts sittings per riksmöte. The riksmöte starts in September.
 - **Sound** is synthesised with Web Audio, off by default, remembered per browser, and not played for replayed events.
-- **Two providers, one set of prompts:** a router sends each call to Claude or Gemini by model ID (`claude-…` or
-  `gemini-…`), so a sitting can mix them. The picker can override every member's model for one sitting.
+- **Three providers, one set of prompts:** a router sends each call to Mistral, Claude or Gemini by model ID
+  (`mistral-…`, `claude-…`, `gemini-…`), so a sitting can mix them. The picker can override every member's model for
+  one sitting.
+- **Mistral is the default** (`mistral-large-latest` in every member file, and for files with no `model:`).
+- **Mistral's free plan:**
+  - `MISTRAL_TIER=free`, the default, bills $0 and paces request starts to about one per second (at most 3 at
+    once). It retries 429s up to 8 times, honouring Retry-After.
+  - `MISTRAL_TIER=paid` uses list prices and full parallelism.
+  - The Ledamöter page no longer shows each member's model.
 - **Gemini details:**
   - Gemini models come from the API's model list, and both keys are checked at startup.
   - Thinking level comes from `effort`; if a model rejects the setting, the provider retries without it.
@@ -63,6 +70,7 @@ Drizzle on `node:sqlite`.
 - [x] UI: ask page with party chips and a cost estimate, live debate with round tabs and party colours, vote matrix,
       the decision with reservations, history, members page, background editor
 - [x] Offline fake mode; unit tests and browser tests
+- [x] Mistral as the default provider, built for the free plan (pacing, $0 billing)
 - [x] Google Gemini as a second provider: model picker in the UI, per-file models, mixed sittings, per-provider key
       status
 - [x] Riksdag look and feel: "Herr talman!" and third-person address, numbered speeches, sitting numbers and dates in

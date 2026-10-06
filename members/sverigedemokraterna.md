@@ -10,7 +10,7 @@ seats: 73          # mandat efter valet 2022, uppdatera till 2026 års resultat
 placement: 8        # plats i kammardiagrammet, vänster till höger
 enabled: true
 order: 2
-model: claude-opus-5-5
+model: mistral-large-latest
 effort: medium
 ---
 <!-- Redigera fritt. Allt under frontmatter (utom kommentarer som denna) skickas som persona till modellen. -->

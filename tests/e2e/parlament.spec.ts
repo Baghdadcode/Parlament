@@ -60,7 +60,8 @@ test("the AI model can be switched to Gemini for a sitting", async ({ page }) =>
   await page.goto("/");
   const picker = page.getByLabel("AI-modell");
   await expect(picker).toHaveValue(""); // default: the model each member file names
-  await expect(picker.locator("optgroup")).toHaveCount(3);
+  await expect(picker.locator("option:checked")).toHaveText("Enligt ledamotsfilerna (Mistral Large)");
+  await expect(picker.locator("optgroup")).toHaveCount(4);
   await picker.selectOption({ label: "Gemini 3.1 Pro" });
   await expect(page.getByText("Alla partiledare och talmannen använder den här modellen")).toBeVisible();
   await expect(page.getByText(/Uppskattad kostnad: ~\$/)).toBeVisible();
@@ -86,6 +87,8 @@ test("the members page shows every file, title and seats", async ({ page }) => {
     await expect(page.getByText(name, { exact: true })).toBeVisible();
   }
   await expect(page.getByText(/Partiordförande, Socialdemokraterna · 107 mandat/)).toBeVisible();
+  await expect(page.getByText("socialdemokraterna.md · medium")).toBeVisible();
+  await expect(page.getByText(/Mistral Large|Claude Opus/)).toHaveCount(0);
   await page.getByText("moderaterna.md").click();
   await expect(page.getByText(/Arbetslinjen/)).toBeVisible();
 });

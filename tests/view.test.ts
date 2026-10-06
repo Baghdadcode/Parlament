@@ -18,17 +18,21 @@ describe("extractProposal", () => {
 });
 
 describe("estimateSessionCost", () => {
-  const base = { members, talman, mode: "full" as const, rounds: 2 };
+  const opus = (m: (typeof members)[number]) => ({ ...m, model: "claude-opus-5-5" });
+  const base = { members: members.map(opus), talman: opus(talman), mode: "full" as const, rounds: 2 };
   it("lands in a plausible range for 8 Opus members and 2 rounds", () => {
     const usd = estimateSessionCost({ ...base, questionChars: 200 });
     expect(usd).toBeGreaterThan(1);
     expect(usd).toBeLessThan(4);
   });
+  it("is free for Mistral on the free tier", () => {
+    expect(estimateSessionCost({ members, talman, mode: "full", rounds: 2 })).toBe(0);
+  });
   it("is cheaper with fewer rounds, without a vote and with Sonnet", () => {
     const full = estimateSessionCost(base);
     expect(estimateSessionCost({ ...base, rounds: 1 })).toBeLessThan(full);
     expect(estimateSessionCost({ ...base, mode: "chairman" })).toBeLessThan(full);
-    const sonnet = members.map((m) => ({ ...m, model: "claude-sonnet-5-5" as const }));
+    const sonnet = members.map((m) => ({ ...m, model: "claude-sonnet-5-5" }));
     expect(estimateSessionCost({ ...base, members: sonnet })).toBeLessThan(full);
   });
 });

@@ -55,21 +55,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <div className="mx-auto max-w-6xl px-4 py-3 text-sm text-red-800 dark:text-red-300">
               <p className="font-semibold">Ingen AI-nyckel fungerar, så riksdagen kan inte sammanträda.</p>
               <p className="mt-1">
-                Lägg minst en av <code>ANTHROPIC_API_KEY=...</code> (Claude, från console.anthropic.com; ett Claude.ai-abonnemang fungerar inte) och{" "}
-                <code>GEMINI_API_KEY=...</code> (Gemini, från aistudio.google.com/apikey) i <code>.env.local</code> i projektmappen, och starta om{" "}
-                <code>npm run dev</code>.
+                Lägg minst en av <code>MISTRAL_API_KEY=...</code> (Mistral, gratis på console.mistral.ai), <code>ANTHROPIC_API_KEY=...</code>{" "}
+                (Claude, från console.anthropic.com) och <code>GEMINI_API_KEY=...</code> (Gemini, från aistudio.google.com/apikey) i{" "}
+                <code>.env.local</code> i projektmappen, och starta om <code>npm run dev</code>.
               </p>
             </div>
           </div>
         )}
-        {(["anthropic", "google"] as const).map((p) => {
+        {(["anthropic", "google", "mistral"] as const).map((p) => {
           const s = status.providers[p];
           // A key that is set but rejected deserves a banner; a missing key only greys out its models in the picker.
           if (s.ok || s.missing) return null;
           return (
             <div key={p} role="alert" className="no-print border-b border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40">
               <div className="mx-auto max-w-6xl px-4 py-2 text-sm text-amber-900 dark:text-amber-200">
-                <span className="font-semibold">{p === "google" ? "Gemini" : "Claude"}-nyckeln fungerar inte:</span> {s.error}
+                <span className="font-semibold">{{ anthropic: "Claude", google: "Gemini", mistral: "Mistral" }[p]}-nyckeln fungerar inte:</span> {s.error}
               </div>
             </div>
           );

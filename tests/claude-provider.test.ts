@@ -7,7 +7,7 @@ import type { SpeakRequest } from "../src/core/types";
 type Params = Record<string, unknown>;
 
 const { members, talman } = loadMembers("members");
-const S = members.find((m) => m.id === "s")!;
+const S = { ...members.find((m) => m.id === "s")!, model: "claude-opus-5-5" };
 const opening = (over: Partial<SpeakRequest> = {}): SpeakRequest => ({ member: S, question: "Q", round: 0, totalRounds: 2, transcript: [], ...over });
 
 function message(over: Record<string, unknown> = {}) {
@@ -125,7 +125,7 @@ describe("ClaudeProvider request shape", () => {
 
   it("uses the Speaker's own model and effort for the decision", async () => {
     const { client, requests } = fakeClient([]);
-    await new ClaudeProvider({ client }).synthesize({ talman, question: "Q", mode: "chairman", answers: [{ label: "A", text: "a" }], reviews: [] });
+    await new ClaudeProvider({ client }).synthesize({ talman: { ...talman, model: "claude-opus-5-5" }, question: "Q", mode: "chairman", answers: [{ label: "A", text: "a" }], reviews: [] });
     expect((requests[0]!.output_config as { effort: string }).effort).toBe("high");
     expect((requests[0]!.system as SystemBlock[])[0]!.text).toContain("Valt förslag");
   });

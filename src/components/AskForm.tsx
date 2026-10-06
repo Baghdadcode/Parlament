@@ -125,6 +125,7 @@ export function AskForm({
             ? "Alla partiledare och talmannen använder den här modellen i den här debatten."
             : "Varje partiledare använder modellen i sin fil (model: …), så du kan blanda Claude och Gemini."}
           {allModels.some((o) => !o.available) && " Gråa modeller saknar en fungerande nyckel i .env.local."}
+          {selectedModel?.paced && " Mistrals gratisnivå tillåter ungefär en förfrågan per sekund, så debatten tar några minuter extra."}
         </p>
       </div>
 

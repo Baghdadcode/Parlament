@@ -1,4 +1,5 @@
-import { pricingFor } from "../config/models";
+import { pricingFor, providerOf, type ModelPricing } from "../config/models";
+import { mistralTier } from "../config/env";
 import type { UsageRecord } from "./types";
 
 export interface TokenCounts {
@@ -8,9 +9,21 @@ export interface TokenCounts {
   cacheWriteTokens: number;
 }
 
+/**
+ * What a model actually costs this user: its list price, or nothing for Mistral on the free (Experiment) tier.
+ * Server side only (reads the environment).
+ */
+export function billedPricing(model: string): ModelPricing | null {
+  const p = pricingFor(model);
+  if (p && providerOf(model) === "mistral" && mistralTier() === "free") {
+    return { ...p, inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0, cacheWritePerMTok: 0 };
+  }
+  return p;
+}
+
 /** inputTokens is the uncached input only (as the API reports it); cache tokens are billed separately. */
 export function computeCostUsd(model: string, t: TokenCounts): number {
-  const p = pricingFor(model);
+  const p = billedPricing(model);
   if (!p) throw new Error(`No pricing configured for model "${model}"`);
   return (
     (t.inputTokens * p.inputPerMTok +

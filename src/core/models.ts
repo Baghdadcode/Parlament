@@ -1,5 +1,13 @@
 // Choosing the AI model for a sitting: the options the picker shows, and applying the choice to the members.
-import { CLAUDE_MODELS, GEMINI_FALLBACK_MODELS, MODEL_ID_PATTERN, modelLabel, providerOf, type ProviderId } from "../config/models";
+import {
+  CLAUDE_MODELS,
+  GEMINI_FALLBACK_MODELS,
+  MISTRAL_FALLBACK_MODELS,
+  MODEL_ID_PATTERN,
+  modelLabel,
+  providerOf,
+  type ProviderId,
+} from "../config/models";
 import type { MemberDef } from "./types";
 
 export interface ProviderState {
@@ -16,6 +24,10 @@ export interface ProviderStatus {
   providers: Record<ProviderId, ProviderState>;
   /** Gemini text models the key can use, newest first (null when unknown). */
   geminiModels: { id: string; label: string }[] | null;
+  /** Mistral chat models the key can use, Large first (null when unknown). */
+  mistralModels: { id: string; label: string }[] | null;
+  /** Mistral plan: "free" (paced, $0) or "paid". */
+  mistralTier: "free" | "paid";
 }
 
 export interface ModelOption {
@@ -25,6 +37,8 @@ export interface ModelOption {
   available: boolean;
   /** Why it is unavailable, e.g. "GEMINI_API_KEY saknas". */
   note: string | null;
+  /** Runs on Mistral's free tier, where requests are paced (slower sittings). */
+  paced: boolean;
 }
 
 export interface ModelChoices {
@@ -32,7 +46,8 @@ export interface ModelChoices {
   defaultValue: string;
 }
 
-const KEY_NAME: Record<ProviderId, string> = { anthropic: "ANTHROPIC_API_KEY", google: "GEMINI_API_KEY" };
+const KEY_NAME: Record<ProviderId, string> = { anthropic: "ANTHROPIC_API_KEY", google: "GEMINI_API_KEY", mistral: "MISTRAL_API_KEY" };
+const NAME: Record<ProviderId, string> = { anthropic: "Claude", google: "Gemini", mistral: "Mistral" };
 
 function availability(status: ProviderStatus, providers: ProviderId[]): Pick<ModelOption, "available" | "note"> {
   for (const p of providers) {
@@ -42,20 +57,30 @@ function availability(status: ProviderStatus, providers: ProviderId[]): Pick<Mod
   return { available: true, note: null };
 }
 
-/** The picker: the member files' own models, every Claude model, and the Gemini models the key can use. */
+/** The picker: the member files' own models, every Claude model, and the Gemini and Mistral models the keys can use. */
 export function modelChoices(status: ProviderStatus, fileModels: string[]): ModelChoices {
+  const free = status.mistralTier === "free";
   const uniqueFile = [...new Set(fileModels)];
   const fileProviders = [...new Set(uniqueFile.map(providerOf).filter((p) => p !== null))];
   const fromFiles: ModelOption = {
     value: "",
     label: `Enligt ledamotsfilerna (${uniqueFile.map(modelLabel).join(", ") || "standard"})`,
     ...availability(status, fileProviders),
+    paced: free && fileProviders.includes("mistral"),
   };
-  const claude = CLAUDE_MODELS.map((id) => ({ value: id, label: modelLabel(id), ...availability(status, ["anthropic"]) }));
+  const claude = CLAUDE_MODELS.map((id) => ({ value: id, label: modelLabel(id), ...availability(status, ["anthropic"]), paced: false }));
   const geminiList = status.geminiModels?.length ? status.geminiModels : GEMINI_FALLBACK_MODELS.map((id) => ({ id, label: modelLabel(id) }));
-  const gemini = geminiList.map((m) => ({ value: m.id, label: m.label, ...availability(status, ["google"]) }));
+  const gemini = geminiList.map((m) => ({ value: m.id, label: m.label, ...availability(status, ["google"]), paced: false }));
+  const mistralList = status.mistralModels?.length ? status.mistralModels : MISTRAL_FALLBACK_MODELS.map((id) => ({ id, label: modelLabel(id) }));
+  const mistral = mistralList.map((m) => ({
+    value: m.id,
+    label: `${m.label}${free ? " (gratis)" : ""}`,
+    ...availability(status, ["mistral"]),
+    paced: free,
+  }));
   const groups = [
     { label: "Ledamotsfilerna", options: [fromFiles] },
+    { label: free ? "Mistral (gratisnivån)" : "Mistral", options: mistral },
     { label: "Claude (Anthropic)", options: claude },
     { label: "Gemini (Google)", options: gemini },
   ];
@@ -85,8 +110,8 @@ export function assertUsable(status: ProviderStatus, models: string[]): void {
     if (!s.ok) {
       throw new ModelUnavailableError(
         s.missing
-          ? `${p === "google" ? "Gemini" : "Claude"} kan inte användas: ${KEY_NAME[p]} saknas i .env.local.`
-          : `${p === "google" ? "Gemini" : "Claude"} kan inte användas: ${s.error ?? "nyckeln fungerar inte"}`,
+          ? `${NAME[p]} kan inte användas: ${KEY_NAME[p]} saknas i .env.local.`
+          : `${NAME[p]} kan inte användas: ${s.error ?? "nyckeln fungerar inte"}`,
       );
     }
   }
