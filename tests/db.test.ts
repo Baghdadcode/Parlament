@@ -50,6 +50,7 @@ describe("persistence", () => {
     expect(d.winner?.short).toBe("C");
     expect(d.verdict).toContain("Reservationer");
     expect(d.usage.calls).toBe(41);
+    expect(d.usage.models).toEqual(["mistral-large-latest"]);
     expect(d).toMatchObject({ riksmote: "2026/27", number: 14 });
     expect(d.finalVotes.map((v) => v.choice)).toEqual(["ja", "nej", "ja", "nej", "ja", "ja", "avstar", "ja"]);
     expect(d.finalTally).toEqual({ ja: 107 + 68 + 24 + 19 + 16, nej: 73 + 24, avstar: 18, franvarande: 0, passed: true });

@@ -55,6 +55,67 @@ function isRetryable(err: unknown): boolean {
 
 const isRateLimit = (err: unknown) => err instanceof MistralError && err.statusCode === 429;
 
+/** Mistral's answer when the key's plan does not include the model (e.g. a new preview on the free plan). */
+export const isNotInPlan = (err: unknown) =>
+  err instanceof MistralError && err.statusCode === 403 && /tier_not_allowed|subscription tier/i.test(`${err.message} ${err.body}`);
+
+/** The message inside Mistral's JSON error body, instead of the raw "API error occurred: Status 403 Body: {…}". */
+export function readableMistralError(err: unknown): Error {
+  if (!(err instanceof MistralError)) return err instanceof Error ? err : new Error(String(err));
+  let message = err.message;
+  try {
+    message = (JSON.parse(err.body) as { message?: string }).message ?? message;
+  } catch {
+    // not JSON: keep the SDK's message
+  }
+  return new Error(`Mistral (${err.statusCode}): ${message}`, { cause: err });
+}
+
+// What this server has learned about the key's plan, shared by every provider instance (the plan is per key).
+const NOT_IN_PLAN = new Set<string>();
+const SUBSTITUTE = new Map<string, string>();
+
+/** Models the plan turned down, and what is used instead, for the picker. */
+export function mistralPlan(): { blocked: string[]; substitutes: Record<string, string> } {
+  return { blocked: [...NOT_IN_PLAN], substitutes: Object.fromEntries(SUBSTITUTE) };
+}
+
+/** Test hook: forget what was learned. */
+export function resetMistralPlan(): void {
+  NOT_IN_PLAN.clear();
+  SUBSTITUTE.clear();
+}
+
+/** The model to call for a requested one, after any substitutions the plan forced. */
+function resolveModel(model: string): string {
+  let m = model;
+  for (let i = 0; i < 10 && SUBSTITUTE.has(m); i++) m = SUBSTITUTE.get(m)!;
+  return m;
+}
+
+const FAMILIES = ["large", "medium", "small"] as const;
+const familyOf = (id: string) => FAMILIES.find((f) => id.includes(f)) ?? null;
+
+/**
+ * The nearest model the plan may include: the same family's other versions (newest first), then the smaller
+ * families, each with its "-latest" alias before dated versions.
+ */
+export function substituteFrom(model: string, available: string[]): string | null {
+  const start = Math.max(0, FAMILIES.indexOf(familyOf(model) ?? "large"));
+  const usable = [...new Set([...available, ...MISTRAL_FALLBACKS])].filter((id) => id !== model && !NOT_IN_PLAN.has(id));
+  for (const family of FAMILIES.slice(start)) {
+    const inFamily = usable.filter((id) => id.startsWith(`mistral-${family}`));
+    const latest = inFamily.filter((id) => id.endsWith("-latest"));
+    const dated = inFamily.filter((id) => !id.endsWith("-latest")).sort((a, b) => b.localeCompare(a));
+    // In the model's own family the "-latest" alias is the one that failed; try older versions first.
+    const ordered = family === familyOf(model) ? [...dated, ...latest] : [...latest, ...dated];
+    if (ordered[0]) return ordered[0];
+  }
+  return null;
+}
+
+const MISTRAL_FALLBACKS = ["mistral-medium-latest", "mistral-small-latest"];
+
 function retryAfterMs(err: unknown): number | null {
   if (!(err instanceof MistralError)) return null;
   const secs = Number(err.headers?.get?.("retry-after"));
@@ -100,6 +161,8 @@ export class MistralProvider extends CallProvider {
   private readonly stallTimeoutMs: number;
   /** Models that rejected the reasoning setting; they are called without it. */
   private readonly noReasoning = new Set<string>();
+  /** Every chat model ID the key can list (dated versions included), fetched once when a substitute is needed. */
+  private chatModels?: Promise<string[]>;
 
   constructor(opts: MistralProviderOptions = {}) {
     super();
@@ -120,6 +183,14 @@ export class MistralProvider extends CallProvider {
     this.gate.resize(1);
   }
 
+  private async substituteFor(model: string): Promise<string | null> {
+    this.chatModels ??= this.client.models
+      .list()
+      .then((l) => chatModelIds(l, { includeDated: true }))
+      .catch(() => []);
+    return substituteFrom(model, await this.chatModels);
+  }
+
   /** A success: ease back towards the configured pace. */
   private ease(): void {
     if (this.pacer.recover()) this.gate.resize(this.baseConcurrency);
@@ -133,13 +204,16 @@ export class MistralProvider extends CallProvider {
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       try {
         opts.onStatus?.({ kind: "queued" });
+        let model = resolveModel(opts.seat.model);
         const r = await this.gate.run(async () => {
           await this.pacer.wait();
+          // Resolved again after waiting: another member may have learned a substitution meanwhile.
+          model = resolveModel(opts.seat.model);
           opts.onStatus?.({ kind: "started" });
-          return this.stream(opts, maxTokens);
+          return this.stream(opts, model, maxTokens);
         });
         this.ease();
-        usage.push(this.toUsage(r, opts));
+        usage.push(this.toUsage(r, opts, model));
         if (r.finishReason === "length" || r.finishReason === "model_length") {
           if (maxTokens >= 64_000) throw new Error("Response hit max_tokens even after raising the limit");
           maxTokens = Math.min(maxTokens * 2, 64_000);
@@ -151,17 +225,30 @@ export class MistralProvider extends CallProvider {
         return { value: parse(r.text), usage };
       } catch (err) {
         lastError = err;
+        // The plan does not include this model: remember that, and switch to the nearest model it does include.
+        if (isNotInPlan(err)) {
+          const blocked = resolveModel(opts.seat.model);
+          NOT_IN_PLAN.add(blocked);
+          const next = await this.substituteFor(blocked);
+          if (!next) throw new Error(`Mistral: ${modelLabel(blocked)} ingår inte i din plan, och ingen annan Mistral-modell hittades.`, { cause: err });
+          if (!SUBSTITUTE.has(blocked)) {
+            SUBSTITUTE.set(blocked, next);
+            console.warn(`[parlament] Mistral: ${blocked} is not in this key's plan; using ${next} instead`);
+          }
+          opts.onStatus?.({ kind: "fallback", from: blocked, to: resolveModel(blocked) });
+          continue;
+        }
         // A model without reasoning support rejects the setting: call it again without one.
         if (
           err instanceof MistralError &&
           (err.statusCode === 400 || err.statusCode === 422) &&
           /reasoning/i.test(`${err.message} ${err.body}`) &&
-          !this.noReasoning.has(opts.seat.model)
+          !this.noReasoning.has(resolveModel(opts.seat.model))
         ) {
-          this.noReasoning.add(opts.seat.model);
+          this.noReasoning.add(resolveModel(opts.seat.model));
           continue;
         }
-        if (!isRetryable(err) && !(err instanceof Error && err.message.startsWith("Mistral stopped"))) throw err;
+        if (!isRetryable(err) && !(err instanceof Error && err.message.startsWith("Mistral stopped"))) throw readableMistralError(err);
         if (attempt + 1 >= this.maxAttempts) break;
         if (isRateLimit(err)) this.throttle();
         const waitMs = retryAfterMs(err) ?? this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random());
@@ -171,11 +258,10 @@ export class MistralProvider extends CallProvider {
         await sleep(waitMs);
       }
     }
-    throw lastError instanceof Error ? lastError : new Error("Mistral call failed after retries");
+    throw lastError ? readableMistralError(lastError) : new Error("Mistral call failed after retries");
   }
 
-  private async stream(opts: CallOptions, maxTokens: number): Promise<StreamResult> {
-    const model = opts.seat.model;
+  private async stream(opts: CallOptions, model: string, maxTokens: number): Promise<StreamResult> {
     // Our own stall timer replaces the SDK's 5-minute cap on the whole request, which a long reasoning answer can hit.
     const abort = new AbortController();
     let stalled = false;
@@ -239,9 +325,8 @@ export class MistralProvider extends CallProvider {
     return r;
   }
 
-  private toUsage(r: StreamResult, opts: CallOptions): UsageRecord {
+  private toUsage(r: StreamResult, opts: CallOptions, model: string): UsageRecord {
     const counts = { inputTokens: r.promptTokens, outputTokens: r.completionTokens, cacheReadTokens: 0, cacheWriteTokens: 0 };
-    const model = opts.seat.model;
     return {
       stage: opts.stage,
       advisorId: opts.advisorId,
@@ -250,7 +335,8 @@ export class MistralProvider extends CallProvider {
       ...counts,
       costUsd: safeCost(model, counts),
       stopReason: r.finishReason,
-      fellBack: false,
+      // Ran on a substitute because the plan does not include the requested model.
+      fellBack: model !== opts.seat.model,
     };
   }
 }
@@ -262,6 +348,22 @@ export interface MistralModelInfo {
 
 /** Specialised families that are not general chat models. */
 const NOT_FOR_DEBATE = /(codestral|devstral|pixtral|voxtral|ocr|embed|moderation|saba)/i;
+
+/** Chat model IDs in a model list: no specialised families, no deprecated models; "-latest" aliases only unless asked. */
+export function chatModelIds(list: ModelList, opts: { includeDated?: boolean } = {}): string[] {
+  const ids = new Set<string>();
+  for (const m of list.data ?? []) {
+    if (!("id" in m) || typeof m.id !== "string") continue;
+    // Deprecated models (Magistral, for one) are on their way out and can be slow; leave them out.
+    if ("deprecation" in m && m.deprecation) continue;
+    const caps = "capabilities" in m ? (m.capabilities as { completionChat?: boolean } | undefined) : undefined;
+    if (caps && caps.completionChat === false) continue;
+    if (NOT_FOR_DEBATE.test(m.id)) continue;
+    if (!opts.includeDated && !m.id.endsWith("-latest")) continue;
+    ids.add(m.id);
+  }
+  return [...ids];
+}
 
 /**
  * Chat models this key can use: the "-latest" aliases (always the current version), Large first. Also the key check:
@@ -278,16 +380,8 @@ export async function listMistralModels(client?: MistralClient): Promise<Mistral
     }
     throw err;
   }
-  const ids = new Set<string>();
-  for (const m of list.data ?? []) {
-    if (!("id" in m) || typeof m.id !== "string") continue;
-    // Deprecated models (Magistral, for one) are on their way out and can be slow; leave them out of the picker.
-    if ("deprecation" in m && m.deprecation) continue;
-    const caps = "capabilities" in m ? (m.capabilities as { completionChat?: boolean } | undefined) : undefined;
-    if (caps && caps.completionChat === false) continue;
-    if (NOT_FOR_DEBATE.test(m.id) || !m.id.endsWith("-latest")) continue;
-    ids.add(m.id);
-  }
   const rank = (id: string) => (/large/.test(id) ? 0 : /medium/.test(id) ? 1 : /small/.test(id) ? 2 : /ministral/.test(id) ? 3 : 4);
-  return [...ids].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)).map((id) => ({ id, label: modelLabel(id) }));
+  return chatModelIds(list)
+    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+    .map((id) => ({ id, label: modelLabel(id) }));
 }

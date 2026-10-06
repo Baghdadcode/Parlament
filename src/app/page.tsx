@@ -7,6 +7,7 @@ import { dateTime, usd } from "../components/format";
 import { DEBATE_ROUNDS } from "../config/models";
 import { toMemberView } from "../core/view";
 import { modelChoices } from "../core/models";
+import { mistralPlan } from "../providers/mistral";
 import { listBriefs, listSessions } from "../db/queries";
 import { getDb, getKeyStatus, getMembers } from "../server/runtime";
 
@@ -26,7 +27,7 @@ export default async function Home() {
           rounds={DEBATE_ROUNDS}
           briefs={briefs}
           canRunAtAll={status.ok && loaded.ok}
-          models={modelChoices(status, loaded.ok ? [loaded.talman, ...loaded.members].map((m) => m.model) : [])}
+          models={modelChoices(status, loaded.ok ? [loaded.talman, ...loaded.members].map((m) => m.model) : [], mistralPlan())}
         />
         {members.length > 0 && (
           <aside className="rounded-xl border border-zinc-200 bg-gradient-to-b from-riks-paper to-white p-4 dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-950">

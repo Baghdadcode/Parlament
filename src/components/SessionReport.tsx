@@ -15,7 +15,7 @@ import { isLive, type SessionModel } from "./model";
 export interface SessionHeader {
   question: string;
   brief: { name: string; updatedAt: string } | null;
-  usage?: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number };
+  usage?: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; models?: string[] };
 }
 
 /** A sitting of the chamber: the live chamber view, or the record of proceedings. */
@@ -71,7 +71,10 @@ export function SessionReport({ header, model }: { header: SessionHeader; model:
           </span>
           <span>{model.mode === "full" ? "Förberedande votering" : "Talmannen avgör"} + huvudvotering</span>
           <span title="AI-modellen som partiledarna och talmannen använde">
-            AI: {[...new Set([...model.seats, model.talman].map((m) => m.model))].map(modelLabel).join(", ")}
+            AI:{" "}
+            {(header.usage?.models?.length ? header.usage.models : [...new Set([...model.seats, model.talman].map((m) => m.model))])
+              .map(modelLabel)
+              .join(", ")}
           </span>
           {header.brief ? (
             <span title="Bakgrunden som den såg ut när sessionen kördes">

@@ -88,6 +88,6 @@ export interface SessionDetailView extends SessionSummaryView {
   tally: TallyView | null;
   verdict: string | null;
   finalVotes: FinalVote[];
-  usage: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+  usage: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; models: string[] };
 }
 

@@ -1,4 +1,4 @@
-import { DEBATE_ROUNDS, minSurvivors } from "../config/models";
+import { DEBATE_ROUNDS, minSurvivors, modelLabel } from "../config/models";
 import { anonymizeFor, LABELS } from "./anonymize";
 import { bordaCount, toReview, type Review, type Tally } from "./borda";
 import { sumCost } from "./cost";
@@ -111,6 +111,7 @@ export interface SessionResult {
 
 /** A retry worth telling the viewer about, e.g. "Ebba Busch: för många förfrågningar – nytt försök om 12 s (2/7)". */
 function retryNotice(who: string, s: CallStatus): string | null {
+  if (s.kind === "fallback") return `${modelLabel(s.from)} ingår inte i din Mistral-plan – använder ${modelLabel(s.to)} i stället.`;
   if (s.kind !== "retrying") return null;
   return `${who}: ${s.reason} – nytt försök om ${Math.max(1, Math.round(s.waitMs / 1000))} s (${s.attempt}/${s.maxAttempts - 1})`;
 }
@@ -202,7 +203,8 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
       if (active.length < needed) {
         return finish(
           "failed",
-          `Bara ${active.length} ledamöter kunde tala i ${round === 0 ? "anförandena" : `replikskifte ${round}`}; minst ${needed} behövs.`,
+          `Bara ${active.length} ledamöter kunde tala i ${round === 0 ? "anförandena" : `replikskifte ${round}`}; minst ${needed} behövs.` +
+            (lastFailure(failedSeats) ? ` Senaste fel: ${lastFailure(failedSeats)}` : ""),
         );
       }
     }
@@ -389,6 +391,8 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
     return finish("failed", errorMessage(err));
   }
 }
+
+const lastFailure = (failed: SessionResult["failedSeats"]) => failed.at(-1)?.error ?? null;
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

@@ -80,6 +80,13 @@ describe("modelChoices", () => {
     expect(c.groups[1]).toEqual({ label: "Mistral", options: [{ value: "mistral-large-latest", label: "Mistral Large", available: true, note: null, paced: false }] });
     expect(c.groups[3]!.options).toEqual([{ value: "gemini-4-pro", label: "Gemini 4 Pro", available: true, note: null, paced: false }]);
   });
+  it("shows what the Mistral plan forced: a substitute, or a model it refused", () => {
+    const plan = { blocked: ["mistral-large-latest", "mistral-medium-latest"], substitutes: { "mistral-large-latest": "mistral-large-2512" } };
+    const c = modelChoices(status(), ["mistral-large-latest"], plan);
+    expect(c.groups[0]!.options[0]!.label).toBe("Enligt ledamotsfilerna (Mistral Large → Mistral Large 2512)");
+    expect(c.groups[1]!.options[0]).toMatchObject({ label: "Mistral Large → Mistral Large 2512 (gratis)", available: true });
+    expect(c.groups[1]!.options[1]).toMatchObject({ available: false, note: "ingår inte i din plan" });
+  });
   it("greys out models without a key and defaults to one that works", () => {
     const c = modelChoices(status({ mistral: missing }), ["mistral-large-latest"]);
     expect(c.groups[0]!.options[0]).toMatchObject({ available: false, note: "MISTRAL_API_KEY saknas" });

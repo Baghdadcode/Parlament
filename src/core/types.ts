@@ -78,7 +78,9 @@ export type CallStatus =
   | { kind: "queued" }
   | { kind: "started" }
   | { kind: "thinking" }
-  | { kind: "retrying"; reason: string; waitMs: number; attempt: number; maxAttempts: number };
+  | { kind: "retrying"; reason: string; waitMs: number; attempt: number; maxAttempts: number }
+  /** The key's plan does not include the model; the call continues on another one. */
+  | { kind: "fallback"; from: string; to: string };
 
 export interface SpeakRequest {
   member: MemberDef;

@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { ConnectionError, MistralError } from "@mistralai/mistralai/models/errors";
-import { MistralProvider, listMistralModels, mistralPacing, reasoningFor, type MistralClient } from "../src/providers/mistral";
+import {
+  MistralProvider,
+  listMistralModels,
+  mistralPacing,
+  mistralPlan,
+  readableMistralError,
+  reasoningFor,
+  resetMistralPlan,
+  substituteFrom,
+  type MistralClient,
+} from "../src/providers/mistral";
 import { Pacer } from "../src/providers/shared";
 import { loadMembers } from "../src/members/load";
 import type { SpeakRequest } from "../src/core/types";
@@ -127,7 +137,7 @@ describe("MistralProvider error handling and pacing", () => {
         throw httpError(404, "Invalid model");
       },
     ]);
-    await expect(new MistralProvider({ client: bad.client, ...fast }).speak(opening())).rejects.toBeInstanceOf(MistralError);
+    await expect(new MistralProvider({ client: bad.client, ...fast }).speak(opening())).rejects.toThrow("Mistral (404): Invalid model");
     expect(bad.requests).toHaveLength(1);
   });
 
@@ -229,5 +239,62 @@ describe("listMistralModels", () => {
       },
     } as unknown as MistralClient;
     await expect(listMistralModels(client)).rejects.toThrow(/Mistral avvisade nyckeln/);
+  });
+});
+
+describe("models outside the key's plan", () => {
+  beforeEach(() => resetMistralPlan());
+
+  const notInPlan = () =>
+    httpError(
+      403,
+      JSON.stringify({ object: "error", message: "This model is not available in your subscription tier", type: "tier_not_allowed", code: "1910" }),
+    );
+
+  /** Refuses mistral-large-latest like the free plan does; answers every other model. */
+  function planClient() {
+    const models: string[] = [];
+    const card = (id: string) => ({ id, object: "model", type: "base", capabilities: { completionChat: true } });
+    const client = {
+      chat: {
+        stream: async (params: Params) => {
+          models.push(params.model as string);
+          if (params.model === "mistral-large-latest") throw notInPlan();
+          return (async function* () {
+            for (const e of reply()) yield e;
+          })();
+        },
+      },
+      models: { list: async () => ({ object: "list", data: ["mistral-large-latest", "mistral-large-2512", "mistral-medium-latest", "mistral-small-latest"].map(card) }) },
+    } as unknown as MistralClient;
+    return { client, models };
+  }
+
+  it("switches to the nearest model the plan includes, says so, and remembers it", async () => {
+    const { client, models } = planClient();
+    const p = new MistralProvider({ client, ...fast });
+    const statuses: unknown[] = [];
+    const r = await p.speak(opening({ onStatus: (s) => statuses.push(s) }));
+    expect(r.value).toContain("Förslag");
+    expect(models).toEqual(["mistral-large-latest", "mistral-large-2512"]);
+    expect(r.usage[0]).toMatchObject({ model: "mistral-large-2512", fellBack: true });
+    expect(statuses).toContainEqual({ kind: "fallback", from: "mistral-large-latest", to: "mistral-large-2512" });
+    expect(mistralPlan()).toEqual({ blocked: ["mistral-large-latest"], substitutes: { "mistral-large-latest": "mistral-large-2512" } });
+
+    // Later calls, even from another provider instance, go straight to the substitute.
+    await new MistralProvider({ client, ...fast }).vote({ member: S, question: "Q", decision: "X", ownProposal: "Y" }).catch(() => undefined);
+    expect(models.slice(2)).toEqual(["mistral-large-2512"]);
+  });
+
+  it("picks older versions of the same family first, then smaller families", () => {
+    const all = ["mistral-large-latest", "mistral-large-2512", "mistral-large-2411", "mistral-medium-latest", "mistral-small-latest"];
+    expect(substituteFrom("mistral-large-latest", all)).toBe("mistral-large-2512");
+    expect(substituteFrom("mistral-medium-latest", all)).toBe("mistral-small-latest");
+    expect(substituteFrom("mistral-small-latest", ["mistral-small-latest"])).toBeNull();
+    expect(substituteFrom("mistral-large-latest", [])).toBe("mistral-medium-latest"); // the built-in fallbacks
+  });
+
+  it("turns Mistral's JSON error body into a readable message", () => {
+    expect(readableMistralError(notInPlan()).message).toBe("Mistral (403): This model is not available in your subscription tier");
   });
 });

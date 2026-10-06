@@ -155,6 +155,8 @@ export async function getSessionDetail(db: ParlamentDb, id: string): Promise<Ses
       outputTokens: usageRows.reduce((n, u) => n + u.outputTokens, 0),
       cacheReadTokens: usageRows.reduce((n, u) => n + u.cacheReadTokens, 0),
       cacheWriteTokens: usageRows.reduce((n, u) => n + u.cacheWriteTokens, 0),
+      // The models that actually answered (a provider can substitute one, e.g. when a plan excludes a model).
+      models: [...new Set(usageRows.map((u) => u.model))],
     },
   };
 }

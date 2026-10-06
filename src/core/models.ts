@@ -57,14 +57,27 @@ function availability(status: ProviderStatus, providers: ProviderId[]): Pick<Mod
   return { available: true, note: null };
 }
 
+/** What the server has learned about the Mistral key's plan: models it refused, and what is used instead. */
+export interface MistralPlanInfo {
+  blocked: string[];
+  substitutes: Record<string, string>;
+}
+
+/** "Mistral Large → Mistral Large 2512" once the plan forced a substitute. */
+function planLabel(id: string, plan: MistralPlanInfo): string {
+  let to = id;
+  for (let i = 0; i < 10 && plan.substitutes[to]; i++) to = plan.substitutes[to]!;
+  return to === id ? modelLabel(id) : `${modelLabel(id)} → ${modelLabel(to)}`;
+}
+
 /** The picker: the member files' own models, every Claude model, and the Gemini and Mistral models the keys can use. */
-export function modelChoices(status: ProviderStatus, fileModels: string[]): ModelChoices {
+export function modelChoices(status: ProviderStatus, fileModels: string[], plan: MistralPlanInfo = { blocked: [], substitutes: {} }): ModelChoices {
   const free = status.mistralTier === "free";
   const uniqueFile = [...new Set(fileModels)];
   const fileProviders = [...new Set(uniqueFile.map(providerOf).filter((p) => p !== null))];
   const fromFiles: ModelOption = {
     value: "",
-    label: `Enligt ledamotsfilerna (${uniqueFile.map(modelLabel).join(", ") || "standard"})`,
+    label: `Enligt ledamotsfilerna (${uniqueFile.map((id) => planLabel(id, plan)).join(", ") || "standard"})`,
     ...availability(status, fileProviders),
     paced: free && fileProviders.includes("mistral"),
   };
@@ -72,12 +85,17 @@ export function modelChoices(status: ProviderStatus, fileModels: string[]): Mode
   const geminiList = status.geminiModels?.length ? status.geminiModels : GEMINI_FALLBACK_MODELS.map((id) => ({ id, label: modelLabel(id) }));
   const gemini = geminiList.map((m) => ({ value: m.id, label: m.label, ...availability(status, ["google"]), paced: false }));
   const mistralList = status.mistralModels?.length ? status.mistralModels : MISTRAL_FALLBACK_MODELS.map((id) => ({ id, label: modelLabel(id) }));
-  const mistral = mistralList.map((m) => ({
-    value: m.id,
-    label: `${m.label}${free ? " (gratis)" : ""}`,
-    ...availability(status, ["mistral"]),
-    paced: free,
-  }));
+  const mistral = mistralList.map((m) => {
+    const label = plan.substitutes[m.id] ? planLabel(m.id, plan) : m.label;
+    // Refused by the plan with nothing found to stand in: not selectable.
+    const refused = plan.blocked.includes(m.id) && !plan.substitutes[m.id];
+    return {
+      value: m.id,
+      label: `${label}${free ? " (gratis)" : ""}`,
+      ...(refused ? { available: false, note: "ingår inte i din plan" } : availability(status, ["mistral"])),
+      paced: free,
+    };
+  });
   const groups = [
     { label: "Ledamotsfilerna", options: [fromFiles] },
     { label: free ? "Mistral (gratisnivån)" : "Mistral", options: mistral },
