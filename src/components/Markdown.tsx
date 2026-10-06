@@ -1,15 +1,22 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/** Model output rendered as markdown. Raw HTML is not rendered (react-markdown default). */
-export function Markdown({ text, className = "" }: { text: string; className?: string }) {
+/**
+ * Model output rendered as markdown. Raw HTML is not rendered (react-markdown default). The "protocol" variant
+ * prints section headings small and quiet, like the run-in headings of the record.
+ */
+export function Markdown({ text, className = "", variant = "default" }: { text: string; className?: string; variant?: "default" | "protocol" }) {
+  const h2 =
+    variant === "protocol"
+      ? "mt-3 font-sans text-[11px] font-semibold uppercase tracking-widest text-zinc-500"
+      : "mt-3 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400";
   return (
     <div className={`space-y-2 text-sm leading-relaxed ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: (p) => <h3 className="mt-3 text-base font-semibold" {...p} />,
-          h2: (p) => <h3 className="mt-3 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400" {...p} />,
+          h2: (p) => <h3 className={h2} {...p} />,
           h3: (p) => <h4 className="mt-2 font-semibold" {...p} />,
           ul: (p) => <ul className="ml-5 list-disc space-y-1" {...p} />,
           ol: (p) => <ol className="ml-5 list-decimal space-y-1" {...p} />,

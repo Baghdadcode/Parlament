@@ -7,7 +7,7 @@ import type { SpeakRequest } from "../src/core/types";
 type Params = Record<string, unknown>;
 
 const { members, talman } = loadMembers("members");
-const S = members.find((m) => m.id === "s")!;
+const S = { ...members.find((m) => m.id === "s")!, model: "claude-opus-5-5" };
 const opening = (over: Partial<SpeakRequest> = {}): SpeakRequest => ({ member: S, question: "Q", round: 0, totalRounds: 2, transcript: [], ...over });
 
 function message(over: Record<string, unknown> = {}) {
@@ -58,6 +58,7 @@ describe("ClaudeProvider request shape", () => {
     expect(system[0]!.text).toContain("BAKGRUNDEN");
     expect(system[0]!.cache_control).toEqual({ type: "ephemeral" });
     expect(system[1]!.text).toContain("Du spelar Magdalena Andersson");
+    expect(system[1]!.text).toContain('"Herr talman!"');
     expect(system[1]!.text).toContain("öppningsanförande");
     expect(system[1]).not.toHaveProperty("cache_control");
   });
@@ -73,7 +74,7 @@ describe("ClaudeProvider request shape", () => {
     expect(a![1]!.text).toContain('<inlägg talare="Ulf Kristersson (M)">');
     expect(a![1]!.cache_control).toEqual({ type: "ephemeral" });
     expect(a![1]!.text).toBe(b![1]!.text);
-    expect(a![2]!.text).toContain("replikrunda 1 av 2");
+    expect(a![2]!.text).toContain("replikskifte 1 av 2");
     expect(a![2]!.text).not.toBe(b![2]!.text);
   });
 
@@ -107,9 +108,24 @@ describe("ClaudeProvider request shape", () => {
     expect((requests[0]!.system as SystemBlock[])[0]!.text).toContain("votering");
   });
 
+  it("asks for the main vote as structured JSON and validates it", async () => {
+    const { client, requests } = fakeClient([() => message({ content: [{ type: "text", text: JSON.stringify({ vote: "avstar", explanation: "Halvbra." }) }] })]);
+    const out = await new ClaudeProvider({ client }).vote({ member: S, question: "Q", decision: "## Beslut\nX", ownProposal: "Y" });
+    expect(out.value).toEqual({ choice: "avstar", explanation: "Halvbra." });
+    expect((requests[0]!.output_config as { format: { type: string } }).format.type).toBe("json_schema");
+    expect((requests[0]!.system as SystemBlock[])[0]!.text).toContain("huvudvotering");
+    expect(requests[0]!.messages).toEqual([{ role: "user", content: expect.stringContaining("<beslutsförslag>") }]);
+    expect(out.usage[0]).toMatchObject({ stage: "vote", advisorId: "s" });
+  });
+
+  it("rejects a malformed vote", async () => {
+    const { client } = fakeClient([() => message({ content: [{ type: "text", text: JSON.stringify({ vote: "kanske", explanation: "?" }) }] })]);
+    await expect(new ClaudeProvider({ client }).vote({ member: S, question: "Q", decision: "X", ownProposal: "Y" })).rejects.toThrow(/vote schema/);
+  });
+
   it("uses the Speaker's own model and effort for the decision", async () => {
     const { client, requests } = fakeClient([]);
-    await new ClaudeProvider({ client }).synthesize({ talman, question: "Q", mode: "chairman", answers: [{ label: "A", text: "a" }], reviews: [] });
+    await new ClaudeProvider({ client }).synthesize({ talman: { ...talman, model: "claude-opus-5-5" }, question: "Q", mode: "chairman", answers: [{ label: "A", text: "a" }], reviews: [] });
     expect((requests[0]!.output_config as { effort: string }).effort).toBe("high");
     expect((requests[0]!.system as SystemBlock[])[0]!.text).toContain("Valt förslag");
   });

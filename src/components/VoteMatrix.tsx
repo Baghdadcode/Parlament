@@ -10,7 +10,7 @@ export function VoteMatrix({ model }: { model: SessionModel }) {
     if (!model.verdict) return null;
     return (
       <section className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-        Ingen votering i den här sessionen: talmannen valde det bästa förslaget direkt{model.mode === "full" ? " (ingen rangordning kom tillbaka)" : ""}.
+        Ingen förberedande votering i den här sessionen: talmannen valde det bästa förslaget direkt{model.mode === "full" ? " (ingen rangordning kom tillbaka)" : ""}.
       </section>
     );
   }
@@ -23,7 +23,7 @@ export function VoteMatrix({ model }: { model: SessionModel }) {
     <section aria-labelledby="matrix-heading" className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 id="matrix-heading" className="text-sm font-semibold">
-          Votering
+          Rangordning
         </h2>
         {tally?.tie && <Badge tone="red">Lika röstetal: talmannen avgör</Badge>}
         {tally && !tally.tie && tally.closeRace && <Badge tone="amber">Jämnt löp</Badge>}
@@ -41,7 +41,7 @@ export function VoteMatrix({ model }: { model: SessionModel }) {
               <th className="py-1.5 pr-2 font-medium text-zinc-500">Röstande ↓ / Förslag →</th>
               {inVote.map((s) => (
                 <th key={s.id} className="px-2 py-1.5 font-medium" title={s.name}>
-                  <PartyBadge member={s} className={tally?.winnerSeatId === s.id ? "ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-zinc-900" : ""} />
+                  <PartyBadge member={s} className={tally?.winnerSeatId === s.id ? "ring-2 ring-riks-gold ring-offset-1 dark:ring-offset-zinc-900" : ""} />
                 </th>
               ))}
             </tr>
@@ -92,9 +92,9 @@ export function VoteMatrix({ model }: { model: SessionModel }) {
                   const e = entry.get(s.id);
                   const win = tally.winnerSeatId === s.id;
                   return (
-                    <td key={s.id} className={`whitespace-nowrap px-2 py-1.5 font-semibold ${win ? "text-indigo-600 dark:text-indigo-400" : ""}`}>
+                    <td key={s.id} className={`whitespace-nowrap px-2 py-1.5 font-semibold ${win ? "text-riks-navy dark:text-riks-gold-soft" : ""}`}>
                       {e ? `${e.points}/${e.maxPossible}` : "–"}
-                      {win && <span className="ml-1 rounded bg-indigo-600 px-1 py-0.5 text-[10px] font-medium text-white">Vinnare</span>}
+                      {win && <span className="ml-1 rounded bg-riks-navy px-1 py-0.5 text-[10px] font-medium text-white">Vinnare</span>}
                     </td>
                   );
                 })}

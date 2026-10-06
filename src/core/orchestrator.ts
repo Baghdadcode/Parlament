@@ -1,10 +1,12 @@
-import { DEBATE_ROUNDS, minSurvivors } from "../config/models";
+import { DEBATE_ROUNDS, minSurvivors, modelLabel } from "../config/models";
 import { anonymizeFor, LABELS } from "./anonymize";
 import { bordaCount, toReview, type Review, type Tally } from "./borda";
 import { sumCost } from "./cost";
 import { DEFAULT_TALMAN, speakerName } from "../members/load";
 import { extractProposal } from "../members/prompts";
+import { annotateLabels, tallyVotes, voteWeight, type FinalVote, type FinalVoteTally } from "./riksdag";
 import type {
+  CallStatus,
   LabeledAnswer,
   MemberDef,
   ParlamentProvider,
@@ -12,10 +14,11 @@ import type {
   TallyView,
   TranscriptEntry,
   UsageRecord,
+  VoteChoice,
   VotingMode,
 } from "./types";
 
-export type SessionState = "opening" | "debating" | "ranking" | "counting" | "synthesizing" | "done" | "failed";
+export type SessionState = "opening" | "debating" | "ranking" | "counting" | "synthesizing" | "voting" | "done" | "failed";
 
 export type SessionEvent =
   | { type: "state"; state: SessionState }
@@ -33,7 +36,14 @@ export type SessionEvent =
   | { type: "ranking_failed"; reviewerId: string; error: string }
   | { type: "tally"; tally: TallyEvent }
   | { type: "cost"; totalUsd: number }
-  | { type: "verdict_delta"; text: string };
+  | { type: "verdict_delta"; text: string }
+  | { type: "vote_done"; seatId: string; choice: VoteChoice; explanation: string; weight: number }
+  | { type: "vote_failed"; seatId: string; error: string }
+  | { type: "vote_result"; votes: FinalVote[]; tally: FinalVoteTally }
+  /** Progress of a speech that has not produced text yet: queued, thinking, waiting to retry. */
+  | { type: "statement_status"; seatId: string; round: number; status: CallStatus }
+  /** Something the viewer should know while waiting, e.g. the provider is rate limiting us. */
+  | { type: "notice"; text: string };
 
 export interface TallyEvent {
   entries: { seatId: string; points: number; maxPossible: number; fraction: number }[];
@@ -87,13 +97,23 @@ export interface SessionResult {
   answers: SeatAnswer[];
   /** Neutral label (A, B, ...) the Speaker saw for each answer id. */
   labels: Record<string, string>;
-  failedSeats: { seatId: string; stage: "speak" | "rank"; round?: number; error: string }[];
+  failedSeats: { seatId: string; stage: "speak" | "rank" | "vote"; round?: number; error: string }[];
   rankings: SeatRanking[];
   tally?: Tally;
   winnerSeatId?: string | null;
   verdict?: string;
+  /** The open main vote on the Speaker's proposal, one entry per member (absent members included). */
+  finalVotes: FinalVote[];
+  finalTally?: FinalVoteTally;
   usage: UsageRecord[];
   totalCostUsd: number;
+}
+
+/** A retry worth telling the viewer about, e.g. "Ebba Busch: för många förfrågningar – nytt försök om 12 s (2/7)". */
+function retryNotice(who: string, s: CallStatus): string | null {
+  if (s.kind === "fallback") return `${modelLabel(s.from)} ingår inte i din Mistral-plan – använder ${modelLabel(s.to)} i stället.`;
+  if (s.kind !== "retrying") return null;
+  return `${who}: ${s.reason} – nytt försök om ${Math.max(1, Math.round(s.waitMs / 1000))} s (${s.attempt}/${s.maxAttempts - 1})`;
 }
 
 export async function runSession(input: SessionInput, provider: ParlamentProvider): Promise<SessionResult> {
@@ -112,6 +132,7 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
     labels: {},
     failedSeats,
     rankings: [],
+    finalVotes: [],
     usage,
     totalCostUsd: 0,
   };
@@ -150,8 +171,14 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
               brief: input.brief,
               round,
               totalRounds: rounds,
+              address: talman.address,
               transcript,
               onText: (text) => emit({ type: "statement_delta", seatId: member.id, round, text }),
+              onStatus: (status) => {
+                emit({ type: "statement_status", seatId: member.id, round, status });
+                const notice = retryNotice(member.name, status);
+                if (notice) emit({ type: "notice", text: notice });
+              },
             });
             record(r.usage);
             emit({ type: "statement_done", seatId: member.id, round });
@@ -176,7 +203,8 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
       if (active.length < needed) {
         return finish(
           "failed",
-          `Bara ${active.length} ledamöter kunde tala i ${round === 0 ? "öppningsrundan" : `replikrunda ${round}`}; minst ${needed} behövs.`,
+          `Bara ${active.length} ledamöter kunde tala i ${round === 0 ? "anförandena" : `replikskifte ${round}`}; minst ${needed} behövs.` +
+            (lastFailure(failedSeats) ? ` Senaste fel: ${lastFailure(failedSeats)}` : ""),
         );
       }
     }
@@ -221,6 +249,10 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
               question: input.question,
               brief: input.brief,
               answers: anon.presented.map((p) => ({ label: p.label, text: p.text })),
+              onStatus: (status) => {
+                const notice = retryNotice(`${reviewer.name} (votering)`, status);
+                if (notice) emit({ type: "notice", text: notice });
+              },
             });
             record(r.usage);
             reviews.push(toReview(reviewer.id, r.value.items, anon.labelToAnswerId));
@@ -301,14 +333,66 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
       reviews: reviewsForChair,
       tally: tallyView,
       onText: (text) => emit({ type: "verdict_delta", text }),
+      onStatus: (status) => {
+        const notice = retryNotice(talman.name, status);
+        if (notice) emit({ type: "notice", text: notice });
+      },
     });
     record(verdict.usage);
     result.verdict = verdict.value;
+
+    // 6. Huvudvotering: an open vote on the Speaker's proposal; each member votes with their party's seats.
+    emit({ type: "state", state: "voting" });
+    const decisionForVoters = annotateLabels(
+      verdict.value,
+      canonical.map((a) => ({ label: a.label, short: memberById.get(a.seatId)!.short })),
+    );
+    const finalVotes: FinalVote[] = [];
+    const weight = (m: MemberDef) => voteWeight(m, input.members);
+    await Promise.all(
+      answers.map(async (a) => {
+        const member = memberById.get(a.seatId)!;
+        try {
+          const r = await provider.vote({
+            member,
+            question: input.question,
+            brief: input.brief,
+            decision: decisionForVoters,
+            ownProposal: a.text,
+            onStatus: (status) => {
+              const notice = retryNotice(`${member.name} (huvudvotering)`, status);
+              if (notice) emit({ type: "notice", text: notice });
+            },
+          });
+          record(r.usage);
+          finalVotes.push({ seatId: member.id, choice: r.value.choice, explanation: r.value.explanation, weight: weight(member) });
+          emit({ type: "vote_done", seatId: member.id, choice: r.value.choice, explanation: r.value.explanation, weight: weight(member) });
+        } catch (err) {
+          const error = errorMessage(err);
+          failedSeats.push({ seatId: member.id, stage: "vote", error });
+          emit({ type: "vote_failed", seatId: member.id, error });
+        }
+      }),
+    );
+    // Members who dropped out of the debate, or whose vote failed, count as absent (frånvarande).
+    result.finalVotes = input.members.map(
+      (m) =>
+        finalVotes.find((v) => v.seatId === m.id) ?? {
+          seatId: m.id,
+          choice: "franvarande" as const,
+          explanation: "Frånvarande vid voteringen.",
+          weight: weight(m),
+        },
+    );
+    result.finalTally = tallyVotes(result.finalVotes);
+    emit({ type: "vote_result", votes: result.finalVotes, tally: result.finalTally });
     return finish("done");
   } catch (err) {
     return finish("failed", errorMessage(err));
   }
 }
+
+const lastFailure = (failed: SessionResult["failedSeats"]) => failed.at(-1)?.error ?? null;
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

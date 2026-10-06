@@ -51,6 +51,8 @@ export async function saveSession(
     question: string;
     members: MemberDef[];
     talman: MemberDef;
+    riksmote: string;
+    number: number;
     brief?: SessionBrief;
     result: SessionResult;
     createdAt: Date;
@@ -71,6 +73,9 @@ export async function saveSession(
         seats: members.map((m) => ({ ...toMemberView(m), hash: m.hash })),
         talman: { ...toMemberView(talman), hash: talman.hash },
         rounds: result.rounds,
+        riksmote: args.riksmote,
+        number: args.number,
+        finalTally: result.finalTally ?? null,
         briefId: brief?.id ?? null,
         briefContent: brief?.content ?? null,
         briefUpdatedAt: brief?.updatedAt ?? null,
@@ -130,6 +135,12 @@ export async function saveSession(
     }
     if (result.verdict) {
       await tx.insert(t.verdicts).values({ sessionId, text: result.verdict, talmanId: talman.id, mode: result.effectiveMode }).run();
+    }
+    for (const v of result.finalVotes) {
+      await tx
+        .insert(t.votes)
+        .values({ sessionId, memberId: v.seatId, choice: v.choice, explanation: v.explanation, weight: v.weight })
+        .run();
     }
     for (const u of result.usage) await tx.insert(t.usage).values({ sessionId, ...u }).run();
   });

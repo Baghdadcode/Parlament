@@ -2,45 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { LIMITS } from "../config/models";
 import { getApiKey } from "../config/env";
-import { computeCostUsd } from "../core/cost";
-import { RANKING_JSON_SCHEMA, parseRanking } from "../core/schemas";
-import type {
-  CallResult,
-  MemberDef,
-  ParlamentProvider,
-  RankRequest,
-  RankingOutput,
-  SpeakRequest,
-  Stage,
-  SynthesizeRequest,
-  UsageRecord,
-} from "../core/types";
-import { briefBlock, memberSystem, rankSystem, rankUser, speakUser, talmanSystem, talmanUser, transcriptBlock } from "../members/prompts";
+import type { CallResult, UsageRecord } from "../core/types";
+import { CallProvider, RefusalError, Semaphore, describeError, logRetry, safeCost, sleep, type CallOptions } from "./shared";
 
-export class RefusalError extends Error {
-  constructor(readonly category: string | null) {
-    super(`The model declined this request (category: ${category ?? "unknown"})`);
-    this.name = "RefusalError";
-  }
-}
-
-export class Semaphore {
-  private active = 0;
-  private waiters: (() => void)[] = [];
-  constructor(private readonly max: number) {}
-  async run<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.active >= this.max) await new Promise<void>((resolve) => this.waiters.push(resolve));
-    this.active++;
-    try {
-      return await fn();
-    } finally {
-      this.active--;
-      this.waiters.shift()?.();
-    }
-  }
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export { RefusalError, Semaphore } from "./shared";
 
 function isRetryable(err: unknown): boolean {
   if (err instanceof Anthropic.RateLimitError) return true;
@@ -56,99 +21,37 @@ function retryAfterMs(err: unknown): number | null {
   return Number.isFinite(secs) ? secs * 1000 : null;
 }
 
-export interface CallOptions {
-  stage: Stage;
-  advisorId: string | null;
-  round: number | null;
-  seat: Pick<MemberDef, "model" | "effort">;
-  system: string;
-  /** Shared blocks sent first, each with a cache breakpoint: the brief, then the debate so far. */
-  cached: string[];
-  user: string;
-  maxTokens: number;
-  jsonSchema?: object;
-  onText?: (delta: string) => void;
-}
-
 export interface ClaudeProviderOptions {
   client?: Anthropic;
   /** Base delay for exponential backoff; tests set it to 0. */
   backoffBaseMs?: number;
 }
 
-export class ClaudeProvider implements ParlamentProvider {
+/** Claude through the Anthropic API: streaming, adaptive thinking, explicit effort, prompt caching. */
+export class ClaudeProvider extends CallProvider {
   private readonly client: Anthropic;
   private readonly gate = new Semaphore(LIMITS.maxConcurrentRequests);
   private readonly backoffBaseMs: number;
 
   constructor(opts: ClaudeProviderOptions = {}) {
+    super();
     // maxRetries is 0 because retries (with Retry-After and jitter) are handled below.
     this.client = opts.client ?? new Anthropic({ apiKey: getApiKey(), maxRetries: 0 });
     this.backoffBaseMs = opts.backoffBaseMs ?? 1000;
   }
 
-  speak(req: SpeakRequest): Promise<CallResult<string>> {
-    const cached = briefCache(req.brief);
-    if (req.transcript.length > 0) cached.push(transcriptBlock(req.transcript));
-    return this.call(
-      {
-        stage: req.round === 0 ? "opening" : "debate",
-        advisorId: req.member.id,
-        round: req.round,
-        seat: req.member,
-        system: memberSystem(req.member, req.round, req.totalRounds),
-        cached,
-        user: speakUser(req.question),
-        maxTokens: 16_000,
-        onText: req.onText,
-      },
-      (text) => text,
-    );
-  }
-
-  rank(req: RankRequest): Promise<CallResult<RankingOutput>> {
-    const expected = req.answers.map((a) => a.label);
-    return this.call(
-      {
-        stage: "rank",
-        advisorId: req.reviewer.id,
-        round: null,
-        seat: req.reviewer,
-        system: rankSystem(req.reviewer),
-        cached: briefCache(req.brief),
-        user: rankUser(req.question, req.answers),
-        maxTokens: 16_000,
-        jsonSchema: RANKING_JSON_SCHEMA,
-      },
-      (text) => ({ items: parseRanking(text, expected) }),
-    );
-  }
-
-  synthesize(req: SynthesizeRequest): Promise<CallResult<string>> {
-    return this.call(
-      {
-        stage: "synthesize",
-        advisorId: req.talman.id,
-        round: null,
-        seat: req.talman,
-        system: talmanSystem(req.talman, req.mode),
-        cached: briefCache(req.brief),
-        user: talmanUser(req),
-        maxTokens: 32_000,
-        onText: req.onText,
-      },
-      (text) => text,
-    );
-  }
-
-  private async call<T>(opts: CallOptions, parse: (text: string) => T): Promise<CallResult<T>> {
+  protected async call<T>(opts: CallOptions, parse: (text: string) => T): Promise<CallResult<T>> {
     const usage: UsageRecord[] = [];
     let maxTokens = opts.maxTokens;
     let lastError: unknown;
 
     for (let attempt = 0; attempt < LIMITS.maxAttempts; attempt++) {
       try {
-        const message = await this.gate.run(() => this.stream(opts, maxTokens));
+        opts.onStatus?.({ kind: "queued" });
+        const message = await this.gate.run(() => {
+          opts.onStatus?.({ kind: "started" });
+          return this.stream(opts, maxTokens);
+        });
         usage.push(...this.toUsage(message, opts));
 
         // Always check stop_reason before reading content.
@@ -170,7 +73,11 @@ export class ClaudeProvider implements ParlamentProvider {
         if (err instanceof RefusalError) throw err;
         lastError = err;
         if (!isRetryable(err)) throw err;
+        if (attempt + 1 >= LIMITS.maxAttempts) break;
         const wait = retryAfterMs(err) ?? this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random());
+        const reason = describeError(err);
+        logRetry("Claude", opts, reason, wait, attempt + 1, LIMITS.maxAttempts);
+        opts.onStatus?.({ kind: "retrying", reason, waitMs: wait, attempt: attempt + 1, maxAttempts: LIMITS.maxAttempts });
         await sleep(wait);
       }
     }
@@ -201,6 +108,14 @@ export class ClaudeProvider implements ParlamentProvider {
       messages: [{ role: "user", content: opts.user }],
     });
     if (opts.onText) stream.on("text", opts.onText);
+    if (opts.onStatus) {
+      let thinking = false;
+      stream.on("thinking", () => {
+        if (thinking) return;
+        thinking = true;
+        opts.onStatus?.({ kind: "thinking" });
+      });
+    }
     return stream.finalMessage();
   }
 
@@ -232,16 +147,6 @@ export class ClaudeProvider implements ParlamentProvider {
       cacheWriteTokens: message.usage.cache_creation_input_tokens ?? 0,
     };
     return [{ ...base, ...counts, model: message.model, costUsd: safeCost(message.model, counts), fellBack: false }];
-  }
-}
-
-const briefCache = (brief?: string): string[] => (brief ? [briefBlock(brief)] : []);
-
-function safeCost(model: string, counts: Parameters<typeof computeCostUsd>[1]): number {
-  try {
-    return computeCostUsd(model, counts);
-  } catch {
-    return 0; // a fallback model with no configured price is reported with zero rather than crashing the run
   }
 }
 

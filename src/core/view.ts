@@ -1,4 +1,5 @@
 // Plain, JSON-safe shapes shared by the server routes and the browser UI.
+import type { FinalVote, FinalVoteTally } from "./riksdag";
 import type { MemberDef, VotingMode } from "./types";
 
 export interface MemberView {
@@ -7,6 +8,9 @@ export interface MemberView {
   party: string;
   short: string;
   color: string;
+  title: string;
+  seats: number;
+  placement: number;
   model: string;
   effort: string;
 }
@@ -17,6 +21,9 @@ export const toMemberView = (m: MemberDef): MemberView => ({
   party: m.party,
   short: m.short,
   color: m.color,
+  title: m.title,
+  seats: m.seats,
+  placement: m.placement,
   model: m.model,
   effort: m.effort,
 });
@@ -53,6 +60,10 @@ export interface StatementView {
 export interface SessionSummaryView {
   id: string;
   question: string;
+  /** "2026/27" */
+  riksmote: string;
+  /** Sitting number within the riksmöte: "2026/27:14". */
+  number: number;
   mode: VotingMode;
   rounds: number;
   state: string;
@@ -60,6 +71,7 @@ export interface SessionSummaryView {
   closeRace: boolean | null;
   totalCostUsd: number;
   createdAt: string;
+  finalTally: FinalVoteTally | null;
 }
 
 export interface SessionDetailView extends SessionSummaryView {
@@ -75,13 +87,7 @@ export interface SessionDetailView extends SessionSummaryView {
   rankings: RankingView[];
   tally: TallyView | null;
   verdict: string | null;
-  usage: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+  finalVotes: FinalVote[];
+  usage: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; models: string[] };
 }
 
-/** Splits the Speaker's decision into the decision itself and the reservations (if any). */
-export function splitVerdict(verdict: string): { main: string; minority: string | null } {
-  const text = `\n${verdict}`;
-  const m = /\n#{1,6}\s*Reservation(?:er)?\s*:?\s*\n/i.exec(text);
-  if (!m) return { main: verdict.trim(), minority: null };
-  return { main: text.slice(0, m.index).trim(), minority: text.slice(m.index + m[0].length).trim() || null };
-}

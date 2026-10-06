@@ -2,6 +2,17 @@
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* A classic book serif from the system, no download: used for the record, the decision and headings. */
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif;
+
+  --color-riks-navy: #13233f;
+  --color-riks-navy-2: #1d3357;
+  --color-riks-gold: #b3923f;
+  --color-riks-gold-soft: #e9dcb6;
+  --color-riks-paper: #fbf9f3;
+  --color-riks-bg: #f1eee6;
+  --color-riks-night: #0b1220;
+  --color-riks-board: #0c1322;
 }
 
 :root {
@@ -9,15 +20,89 @@
 }
 
 body {
-  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  @apply bg-riks-bg text-zinc-900 antialiased dark:bg-riks-night dark:text-zinc-100;
 }
 
 @keyframes blink {
-  50% { opacity: 0; }
+  50% {
+    opacity: 0;
+  }
 }
 .caret::after {
   content: "▍";
   margin-left: 1px;
   animation: blink 1s steps(1) infinite;
   color: rgb(161 161 170);
+}
+
+/* The Speaker's gavel coming down. */
+@keyframes gavel {
+  0% {
+    transform: rotate(-35deg);
+  }
+  45% {
+    transform: rotate(8deg);
+  }
+  60% {
+    transform: rotate(-4deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+.gavel {
+  display: inline-block;
+  transform-origin: 80% 80%;
+  animation: gavel 0.6s ease-out 1;
+}
+
+/* A speaking member's seats breathe gently in the chamber. */
+@keyframes speaking {
+  50% {
+    opacity: 0.55;
+  }
+}
+.speaking {
+  animation: speaking 1.6s ease-in-out infinite;
+}
+
+/* "SIMULERING" across the record and the decision, on screen faintly and in print. */
+.watermark {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: 6rem;
+  letter-spacing: 0.3em;
+  color: rgb(179 146 63 / 0.07);
+  transform: rotate(-24deg);
+  user-select: none;
+}
+
+@media print {
+  @page {
+    margin: 18mm 16mm;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+  }
+  .watermark {
+    position: fixed;
+    color: rgb(0 0 0 / 0.06);
+  }
 }

@@ -1,3 +1,4 @@
+import { initials } from "./hemicycle";
 import type { MemberView } from "../core/view";
 
 /** Party abbreviation on the party colour, e.g. a red "S". */
@@ -13,11 +14,15 @@ export function PartyBadge({ member, className = "" }: { member: Pick<MemberView
   );
 }
 
-export function PartyChip({ member }: { member: MemberView }) {
+/** Initials in a party-coloured circle, standing in for a portrait. */
+export function Avatar({ member, size = 40 }: { member: Pick<MemberView, "name" | "color" | "short">; size?: number }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white py-0.5 pl-0.5 pr-2.5 text-xs dark:border-zinc-700 dark:bg-zinc-900">
-      <PartyBadge member={member} className="rounded-full" />
-      {member.name}
+    <span
+      aria-hidden
+      className="inline-flex shrink-0 items-center justify-center rounded-full font-serif font-semibold text-white ring-2 ring-white/70 dark:ring-black/40"
+      style={{ width: size, height: size, backgroundColor: member.color, fontSize: size * 0.38, textShadow: "0 0 3px rgba(0,0,0,.5)" }}
+    >
+      {initials(member.name)}
     </span>
   );
 }

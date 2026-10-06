@@ -52,10 +52,10 @@ export function BriefEditor({ initial }: { initial: BriefView[] }) {
           <button
             key={b.id}
             onClick={() => pick(b)}
-            className={`block w-full rounded-md px-3 py-2 text-left text-sm ${b.id === selectedId ? "bg-indigo-600 text-white" : "hover:bg-zinc-200 dark:hover:bg-zinc-800"}`}
+            className={`block w-full rounded-md px-3 py-2 text-left text-sm ${b.id === selectedId ? "bg-riks-navy text-white" : "hover:bg-zinc-200 dark:hover:bg-zinc-800"}`}
           >
             {b.name}
-            <span className={`block text-[11px] ${b.id === selectedId ? "text-indigo-100" : "text-zinc-500"}`}>Ändrad {dateTime(b.updatedAt)}</span>
+            <span className={`block text-[11px] ${b.id === selectedId ? "text-riks-gold-soft" : "text-zinc-500"}`}>Ändrad {dateTime(b.updatedAt)}</span>
           </button>
         ))}
         <button onClick={() => pick(null)} className="block w-full rounded-md border border-dashed border-zinc-300 px-3 py-2 text-left text-sm text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900">
@@ -92,7 +92,7 @@ export function BriefEditor({ initial }: { initial: BriefView[] }) {
           <button
             onClick={save}
             disabled={!dirty || !name.trim()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+            className="rounded-lg bg-riks-navy px-4 py-2 text-sm font-medium text-white hover:bg-riks-navy-2 disabled:opacity-40"
           >
             {selected ? "Spara ändringar" : "Skapa bakgrund"}
           </button>

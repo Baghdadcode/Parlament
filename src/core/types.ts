@@ -14,6 +14,14 @@ export interface MemberDef {
   role: MemberRole;
   enabled: boolean;
   order: number;
+  /** Title on the name tag, e.g. "Partiordförande". */
+  title: string;
+  /** Riksdag seats: drawn in the chamber and used to weigh the main vote (0 = not set). */
+  seats: number;
+  /** Left-to-right place in the chamber diagram. */
+  placement: number;
+  /** How the Speaker is addressed ("Herr talman" / "Fru talman"); only read from the talman file. */
+  address: string;
   /** The markdown body of the file (comments removed), sent verbatim as the persona. */
   persona: string;
   model: ModelId;
@@ -24,7 +32,7 @@ export interface MemberDef {
   file: string;
 }
 
-export type Stage = "opening" | "debate" | "rank" | "synthesize";
+export type Stage = "opening" | "debate" | "rank" | "synthesize" | "vote";
 
 export interface UsageRecord {
   stage: Stage;
@@ -65,6 +73,15 @@ export interface TranscriptEntry {
   text: string;
 }
 
+/** Progress of one model call, so the UI can say why nothing has appeared yet. */
+export type CallStatus =
+  | { kind: "queued" }
+  | { kind: "started" }
+  | { kind: "thinking" }
+  | { kind: "retrying"; reason: string; waitMs: number; attempt: number; maxAttempts: number }
+  /** The key's plan does not include the model; the call continues on another one. */
+  | { kind: "fallback"; from: string; to: string };
+
 export interface SpeakRequest {
   member: MemberDef;
   question: string;
@@ -72,9 +89,12 @@ export interface SpeakRequest {
   /** 0 = opening statement, 1..totalRounds = rebuttal rounds. */
   round: number;
   totalRounds: number;
+  /** How the Speaker is addressed, e.g. "Herr talman". */
+  address?: string;
   /** Everything said in earlier rounds; empty in the opening round. */
   transcript: TranscriptEntry[];
   onText?: (delta: string) => void;
+  onStatus?: (s: CallStatus) => void;
 }
 
 export interface LabeledAnswer {
@@ -87,6 +107,7 @@ export interface RankRequest {
   question: string;
   brief?: string;
   answers: LabeledAnswer[];
+  onStatus?: (s: CallStatus) => void;
 }
 
 export interface ReviewItem {
@@ -113,6 +134,7 @@ export interface SynthesizeRequest {
   reviews: { reviewer: string; items: ReviewItem[] }[];
   tally?: TallyView;
   onText?: (delta: string) => void;
+  onStatus?: (s: CallStatus) => void;
 }
 
 export interface TallyView {
@@ -123,9 +145,30 @@ export interface TallyView {
   tie: boolean;
 }
 
-/** The three-method interface; other providers can be added without touching the orchestrator. */
+export type VoteChoice = "ja" | "nej" | "avstar";
+
+/** The open main vote (huvudvotering) on the Speaker's proposed decision. */
+export interface VoteRequest {
+  member: MemberDef;
+  question: string;
+  brief?: string;
+  /** The Speaker's proposal, with proposal letters annotated with their parties. */
+  decision: string;
+  /** The member's own final proposal from the debate. */
+  ownProposal: string;
+  onStatus?: (s: CallStatus) => void;
+}
+
+export interface VoteOutput {
+  choice: VoteChoice;
+  /** Röstförklaring: one or two sentences. */
+  explanation: string;
+}
+
+/** The four-method interface; other providers can be added without touching the orchestrator. */
 export interface ParlamentProvider {
   speak(req: SpeakRequest): Promise<CallResult<string>>;
   rank(req: RankRequest): Promise<CallResult<RankingOutput>>;
   synthesize(req: SynthesizeRequest): Promise<CallResult<string>>;
+  vote(req: VoteRequest): Promise<CallResult<VoteOutput>>;
 }

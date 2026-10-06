@@ -11,12 +11,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const detail = await getSessionDetail(await getDb(), id);
   if (detail) {
-    return (
-      <SessionReport
-        model={modelFromDetail(detail)}
-        header={{ question: detail.question, createdAt: detail.createdAt, brief: detail.brief, usage: detail.usage }}
-      />
-    );
+    return <SessionReport model={modelFromDetail(detail)} header={{ question: detail.question, brief: detail.brief, usage: detail.usage }} />;
   }
 
   // Still running in this server process: stream it.
@@ -25,10 +20,15 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   return (
     <LiveSession
       id={id}
-      seats={started.seats}
-      talman={started.talman}
-      mode={started.mode}
-      rounds={started.rounds}
+      meta={{
+        seats: started.seats,
+        talman: started.talman,
+        mode: started.mode,
+        rounds: started.rounds,
+        riksmote: started.riksmote,
+        number: started.number,
+        createdAt: started.createdAt,
+      }}
       header={{ question: started.question, brief: started.brief }}
     />
   );

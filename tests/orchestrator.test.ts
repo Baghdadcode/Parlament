@@ -17,14 +17,16 @@ describe("runSession (fake provider)", () => {
       if (e.type === "round") rounds.push(e.round);
     };
     const r = await runSession({ ...base, onEvent }, p);
-    expect(states).toEqual(["opening", "debating", "ranking", "counting", "synthesizing", "done"]);
+    expect(states).toEqual(["opening", "debating", "ranking", "counting", "synthesizing", "voting", "done"]);
     expect(rounds).toEqual([0, 1, 2]);
     expect(r.state).toBe("done");
-    expect(p.calls).toEqual({ speak: 8 * 3, rank: 8, synthesize: 1 });
+    expect(p.calls).toEqual({ speak: 8 * 3, rank: 8, synthesize: 1, vote: 8 });
     expect(r.statements).toHaveLength(24);
     expect(r.tally).toBeDefined();
     expect(r.verdict).toContain("## Beslut");
-    expect(r.totalCostUsd).toBeGreaterThan(0);
+    expect(r.finalTally).toMatchObject({ passed: true, franvarande: 0 });
+    expect(r.usage).toHaveLength(24 + 8 + 1 + 8);
+    expect(r.totalCostUsd).toBe(0); // the member files run on Mistral's free tier
   });
 
   it("gives nobody a transcript in the opening, and everyone the full named transcript later", async () => {
@@ -46,7 +48,7 @@ describe("runSession (fake provider)", () => {
       expect(req.answers).toHaveLength(7);
       expect(req.answers.some((a) => a.text.includes(`[id:${req.reviewer.id}]`))).toBe(false);
       for (const a of req.answers) {
-        expect(a.text).toMatch(/^Mitt förslag efter replikrunda 2/);
+        expect(a.text).toMatch(/^Mitt förslag efter replikskifte 2/);
         expect(a.text).not.toMatch(/Replik|Rörelse/);
       }
     }
@@ -109,8 +111,8 @@ describe("runSession (fake provider)", () => {
     const states: string[] = [];
     const p = new FakeProvider();
     const r = await runSession({ ...base, mode: "chairman", rounds: 1, onEvent: (e) => e.type === "state" && states.push(e.state) }, p);
-    expect(states).toEqual(["opening", "debating", "synthesizing", "done"]);
-    expect(p.calls).toEqual({ speak: 16, rank: 0, synthesize: 1 });
+    expect(states).toEqual(["opening", "debating", "synthesizing", "voting", "done"]);
+    expect(p.calls).toEqual({ speak: 16, rank: 0, synthesize: 1, vote: 8 });
     expect(r.tally).toBeUndefined();
   });
 
@@ -119,5 +121,45 @@ describe("runSession (fake provider)", () => {
     const r = await runSession({ ...base, rounds: 0 }, p);
     expect(p.calls.speak).toBe(8);
     expect(r.answers[0]!.text).toContain("## Motivering");
+  });
+
+  it("tells every speaker how to address the Speaker", async () => {
+    const p = new FakeProvider();
+    await runSession({ ...base, talman: { ...talman, address: "Fru talman" } }, p);
+    expect(p.seen.speak.every((s) => s.address === "Fru talman")).toBe(true);
+  });
+
+  it("holds an open main vote weighted by seats, with party names in the proposal letters", async () => {
+    const p = new FakeProvider({ votes: { s: "nej", sd: "nej", m: "nej" } });
+    const r = await runSession(base, p);
+    expect(p.seen.vote).toHaveLength(8);
+    for (const req of p.seen.vote) {
+      expect(req.decision).toContain("## Beslut");
+      expect(req.decision).toMatch(/förslag A \((S|SD|M|V|C|KD|MP|L)\)/);
+      expect(req.ownProposal).toContain(`[id:${req.member.id}]`);
+    }
+    // S 107 + SD 73 + M 68 + V 24 (the fake's default) vote nej; C, KD and L ja; MP abstains.
+    expect(r.finalTally).toEqual({ ja: 24 + 19 + 16, nej: 107 + 73 + 68 + 24, avstar: 18, franvarande: 0, passed: false });
+  });
+
+  it("counts members who dropped out or whose vote failed as absent", async () => {
+    const r = await runSession(base, new FakeProvider({ failSpeakFor: { kd: 0 }, failVoteFor: ["l"] }));
+    expect(r.finalVotes).toHaveLength(8);
+    expect(r.finalVotes.filter((v) => v.choice === "franvarande").map((v) => v.seatId).sort()).toEqual(["kd", "l"]);
+    expect(r.finalTally!.franvarande).toBe(19 + 16);
+    expect(r.failedSeats).toContainEqual(expect.objectContaining({ seatId: "l", stage: "vote" }));
+  });
+
+  it("passes call progress on as status events and retry notices", async () => {
+    class Slow extends FakeProvider {
+      override async speak(req: Parameters<FakeProvider["speak"]>[0]) {
+        req.onStatus?.({ kind: "retrying", reason: "för många förfrågningar (rate limit)", waitMs: 4000, attempt: 1, maxAttempts: 8 });
+        return super.speak(req);
+      }
+    }
+    const events: SessionEvent[] = [];
+    await runSession({ ...base, rounds: 0, onEvent: (e) => events.push(e) }, new Slow());
+    expect(events).toContainEqual(expect.objectContaining({ type: "statement_status", seatId: "s", round: 0, status: expect.objectContaining({ kind: "retrying" }) }));
+    expect(events).toContainEqual({ type: "notice", text: "Magdalena Andersson: för många förfrågningar (rate limit) – nytt försök om 4 s (1/7)" });
   });
 });

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { date, usd } from "./format";
-import { PartyChip } from "./PartyChip";
 import type { BriefView, MemberView } from "../core/view";
+import type { ModelChoices } from "../core/models";
 import type { VotingMode } from "../core/types";
 
 export function AskForm({
@@ -13,16 +13,21 @@ export function AskForm({
   rounds,
   briefs,
   canRunAtAll,
+  models,
 }: {
   members: MemberView[];
   rounds: number;
   briefs: BriefView[];
   canRunAtAll: boolean;
+  models: ModelChoices;
 }) {
   const router = useRouter();
   const [question, setQuestion] = useState("");
   const [briefId, setBriefId] = useState<string>("");
   const [mode, setMode] = useState<VotingMode>("full");
+  const [model, setModel] = useState<string>(models.defaultValue);
+  const allModels = models.groups.flatMap((g) => g.options);
+  const selectedModel = allModels.find((o) => o.value === model);
   const [estimate, setEstimate] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +40,7 @@ export function AskForm({
         const res = await fetch("/api/estimate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ briefId: briefId || null, mode, question }),
+          body: JSON.stringify({ briefId: briefId || null, mode, question, model: model || null }),
         });
         setEstimate(res.ok ? ((await res.json()) as { usd: number }).usd : null);
       } catch {
@@ -43,7 +48,7 @@ export function AskForm({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [briefId, mode, question]);
+  }, [briefId, mode, question, model]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,7 +58,7 @@ export function AskForm({
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, briefId: briefId || null, mode }),
+        body: JSON.stringify({ question, briefId: briefId || null, mode, model: model || null }),
       });
       const body = (await res.json()) as { id?: string; error?: string };
       if (!res.ok || !body.id) throw new Error(body.error ?? `Förfrågan misslyckades (${res.status})`);
@@ -64,12 +69,13 @@ export function AskForm({
     }
   }
 
-  const canRun = canRunAtAll && question.trim().length >= 3 && !submitting;
+  const canRun = canRunAtAll && !!selectedModel?.available && question.trim().length >= 3 && !submitting;
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div>
-        <label htmlFor="question" className="mb-1 block text-sm font-medium">
+        <p className="font-serif text-xs uppercase tracking-[0.2em] text-riks-gold">Väck en fråga i kammaren</p>
+        <label htmlFor="question" className="mb-2 mt-0.5 block font-serif text-xl font-semibold">
           Din fråga till riksdagen
         </label>
         <textarea
@@ -81,24 +87,45 @@ export function AskForm({
           }}
           rows={4}
           placeholder="t.ex. Hur ska Sverige minska elpriserna för hushållen de kommande fem åren?"
-          className="w-full resize-y rounded-lg border border-zinc-300 bg-transparent p-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 dark:border-zinc-700"
+          className="w-full resize-y rounded-lg border border-zinc-300 bg-transparent p-3 outline-none font-serif text-base focus:border-riks-gold focus:ring-2 focus:ring-riks-gold/30 dark:border-zinc-700"
         />
       </div>
 
+      <p className="text-xs text-zinc-500">
+        Partiledardebatt med {members.length} partiledare: anföranden och {rounds} replikskiften, sedan votering och talmannens beslut. Ändra
+        personligheterna i <code>members/*.md</code>; ändringarna gäller från nästa fråga.{" "}
+        <Link href="/ledamoter" className="text-riks-navy underline dark:text-riks-gold-soft">
+          Visa ledamöter
+        </Link>
+      </p>
+
       <div>
-        <p className="mb-1 text-sm font-medium">
-          I kammaren <span className="font-normal text-zinc-400">({members.length} partiledare, öppning + {rounds} replikrundor)</span>
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {members.map((m) => (
-            <PartyChip key={m.id} member={m} />
+        <label htmlFor="model" className="mb-1 block text-sm font-medium">
+          AI-modell
+        </label>
+        <select
+          id="model"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="w-full rounded-lg border border-zinc-300 bg-transparent p-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          {models.groups.map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {g.options.map((o) => (
+                <option key={o.value || "files"} value={o.value} disabled={!o.available}>
+                  {o.label}
+                  {o.note ? ` (${o.note})` : ""}
+                </option>
+              ))}
+            </optgroup>
           ))}
-        </div>
+        </select>
         <p className="mt-1 text-xs text-zinc-500">
-          Ändra personligheter i <code>members/*.md</code>; ändringarna gäller från nästa fråga.{" "}
-          <Link href="/ledamoter" className="text-indigo-600 hover:underline dark:text-indigo-400">
-            Visa ledamöter
-          </Link>
+          {model
+            ? "Alla partiledare och talmannen använder den här modellen i den här debatten."
+            : "Varje partiledare använder modellen i sin fil (model: …), så du kan blanda Claude och Gemini."}
+          {allModels.some((o) => !o.available) && " Gråa modeller saknar en fungerande nyckel i .env.local."}
+          {selectedModel?.paced && " Mistrals gratisnivå tillåter ungefär en förfrågan per sekund, så debatten tar några minuter extra."}
         </p>
       </div>
 
@@ -122,28 +149,30 @@ export function AskForm({
           </select>
           <p className="mt-1 text-xs text-zinc-500">
             {brief ? `Ändrad ${date(brief.updatedAt)} · ` : ""}
-            <Link href="/bakgrund" className="text-indigo-600 hover:underline dark:text-indigo-400">
+            <Link href="/bakgrund" className="text-riks-navy underline dark:text-riks-gold-soft">
               Redigera bakgrunder
             </Link>
           </p>
         </div>
 
         <fieldset>
-          <legend className="mb-1 block text-sm font-medium">Beslut</legend>
+          <legend className="mb-1 block text-sm font-medium">Beslutsordning</legend>
           <div className="space-y-1 text-sm">
             <label className="flex items-start gap-2">
               <input type="radio" name="mode" checked={mode === "full"} onChange={() => setMode("full")} className="mt-1" />
               <span>
-                Votering <span className="block text-xs text-zinc-500">Partiledarna rangordnar varandras slutförslag anonymt, sedan skriver talmannen beslutet</span>
+                Förberedande votering{" "}
+                <span className="block text-xs text-zinc-500">Partiledarna rangordnar varandras slutförslag anonymt; talmannen bygger sitt förslag på vinnaren</span>
               </span>
             </label>
             <label className="flex items-start gap-2">
               <input type="radio" name="mode" checked={mode === "chairman"} onChange={() => setMode("chairman")} className="mt-1" />
               <span>
-                Talmannen avgör <span className="block text-xs text-zinc-500">Snabbare och billigare; ingen votering</span>
+                Talmannen avgör <span className="block text-xs text-zinc-500">Snabbare och billigare; talmannen väljer förslag själv</span>
               </span>
             </label>
           </div>
+          <p className="mt-1 text-xs text-zinc-500">Båda avslutas med huvudvotering: ja, nej eller avstår, med partiernas mandat.</p>
         </fieldset>
       </div>
 
@@ -161,9 +190,9 @@ export function AskForm({
         <button
           type="submit"
           disabled={!canRun}
-          className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-riks-navy px-5 py-2 text-sm font-medium text-white shadow-sm ring-1 ring-riks-gold/60 hover:bg-riks-navy-2 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {submitting ? "Kallar till debatt…" : "Fråga riksdagen"}
+          {submitting ? "Kallar till sammanträde…" : "Fråga riksdagen"}
         </button>
       </div>
     </form>

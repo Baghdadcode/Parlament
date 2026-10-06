@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { modelLabel } from "../config/models";
 import { Markdown } from "./Markdown";
 import { PartyBadge } from "./PartyChip";
 import { roundLabel } from "./format";
@@ -21,8 +22,8 @@ export function DebateRounds({ model }: { model: SessionModel }) {
   return (
     <section aria-labelledby="debate-heading">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h2 id="debate-heading" className="mr-2 text-sm font-semibold">
-          Debatten
+        <h2 id="debate-heading" className="sr-only">
+          Alla anföranden
         </h2>
         <div role="tablist" aria-label="Rundor" className="flex flex-wrap gap-1">
           {rounds.map((r) => {
@@ -46,7 +47,7 @@ export function DebateRounds({ model }: { model: SessionModel }) {
           })}
         </div>
         {roundDone && (
-          <button className="ml-auto text-xs text-indigo-600 hover:underline dark:text-indigo-400" onClick={() => setExpanded((x) => !x)}>
+          <button className="ml-auto text-xs text-riks-navy hover:underline dark:text-riks-gold-soft" onClick={() => setExpanded((x) => !x)}>
             {expanded ? "Fäll ihop" : "Visa allt"}
           </button>
         )}
@@ -61,7 +62,7 @@ export function DebateRounds({ model }: { model: SessionModel }) {
             <article
               key={seat.id}
               aria-label={seat.name}
-              className={`flex flex-col rounded-lg border border-l-4 border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 ${winner === seat.id && isFinal ? "ring-2 ring-indigo-500" : ""}`}
+              className={`flex flex-col rounded-lg border border-l-4 border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 ${winner === seat.id && isFinal ? "ring-2 ring-riks-gold" : ""}`}
               style={{ borderLeftColor: seat.color }}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
@@ -71,7 +72,7 @@ export function DebateRounds({ model }: { model: SessionModel }) {
                 </h3>
                 <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-zinc-500">
                   {label && <span title="Etiketten talmannen såg">Förslag {label}</span>}
-                  {winner === seat.id && isFinal && <span className="rounded bg-indigo-600 px-1.5 py-0.5 font-medium text-white">Vinnare</span>}
+                  {winner === seat.id && isFinal && <span className="rounded bg-riks-navy px-1.5 py-0.5 font-medium text-white">Vinnare</span>}
                   <StatusDot status={s.status} />
                 </span>
               </header>
@@ -85,7 +86,7 @@ export function DebateRounds({ model }: { model: SessionModel }) {
                 <p className="text-sm text-zinc-400">Förbereder sitt anförande…</p>
               )}
               <footer className="mt-auto pt-2 text-[11px] text-zinc-400">
-                {seat.party} · {seat.model.replace("claude-", "")} · {seat.effort}
+                {seat.party} · {modelLabel(seat.model)} · {seat.effort}
               </footer>
             </article>
           );
@@ -99,7 +100,7 @@ const STATUS_TEXT: Record<string, string> = { done: "klar", failed: "misslyckade
 
 function StatusDot({ status }: { status: string }) {
   const cls =
-    status === "done" ? "bg-emerald-500" : status === "failed" ? "bg-red-500" : status === "streaming" ? "bg-indigo-500 animate-pulse" : "bg-zinc-300 dark:bg-zinc-600";
+    status === "done" ? "bg-emerald-500" : status === "failed" ? "bg-red-500" : status === "streaming" ? "bg-red-600 animate-pulse" : "bg-zinc-300 dark:bg-zinc-600";
   return <span className={`inline-block h-2 w-2 rounded-full ${cls}`} aria-label={STATUS_TEXT[status]} title={STATUS_TEXT[status]} />;
 }
 

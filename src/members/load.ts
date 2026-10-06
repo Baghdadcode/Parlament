@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { DEFAULT_MODEL, EFFORTS, LIMITS, MODEL_IDS } from "../config/models";
+import { DEFAULT_MODEL, EFFORTS, LIMITS, MODEL_ID_PATTERN } from "../config/models";
 import { getMembersDir } from "../config/env";
 import type { MemberDef } from "../core/types";
 
@@ -33,7 +33,15 @@ const frontmatterSchema = z.object({
   role: z.enum(["ledamot", "talman"]).default("ledamot"),
   enabled: bool.default(true),
   order: z.coerce.number().default(50),
-  model: z.enum(MODEL_IDS).default(DEFAULT_MODEL),
+  /** Title on the name tag, e.g. "Partiordförande". */
+  title: z.string().min(1).optional(),
+  /** Riksdag seats: drawn in the chamber and used to weigh the main vote. */
+  seats: z.coerce.number().int().min(0).max(349).default(0),
+  /** Left-to-right place in the chamber diagram (defaults to order). */
+  placement: z.coerce.number().optional(),
+  /** How speakers address the Speaker: "Herr talman" or "Fru talman" (talman file only). */
+  address: z.string().min(1).default("Herr talman"),
+  model: z.string().regex(MODEL_ID_PATTERN, 'use a Claude or Gemini model ID, e.g. "claude-opus-5-5" or "gemini-3.1-pro-preview"').default(DEFAULT_MODEL),
   effort: z.enum(EFFORTS).default("medium"),
 });
 
@@ -74,7 +82,15 @@ export function parseMemberFile(file: string, content: string): MemberDef {
   const persona = stripComments(parsed.body);
   if (!persona) throw new MemberFileError(file, "the persona (text below the frontmatter) is empty");
   const hash = createHash("sha256").update(content).digest("hex").slice(0, 12);
-  return { ...fm.data, persona, hash, file };
+  const { title, placement, ...rest } = fm.data;
+  return {
+    ...rest,
+    title: title ?? (fm.data.role === "talman" ? "Talman" : "Partiledare"),
+    placement: placement ?? fm.data.order,
+    persona,
+    hash,
+    file,
+  };
 }
 
 /** Used when no talman file exists. */
@@ -87,6 +103,10 @@ export const DEFAULT_TALMAN: MemberDef = {
   role: "talman",
   enabled: true,
   order: 99,
+  title: "Talman",
+  seats: 0,
+  placement: 99,
+  address: "Herr talman",
   persona:
     "Du är riksdagens talman: neutral, opartisk och noggrann. Du röstar inte. Du formulerar riksdagens beslut tydligt och redovisar oenighet öppet.",
   model: DEFAULT_MODEL,
