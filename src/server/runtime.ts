@@ -6,12 +6,15 @@ import { saveSession } from "../db/store";
 import { getBrief, maxSittingNumber } from "../db/queries";
 import { runSession, type SessionEvent } from "../core/orchestrator";
 import { ClaudeProvider, checkApiKey } from "../providers/claude";
+import { GeminiProvider, listGeminiModels } from "../providers/gemini";
+import { RouterProvider } from "../providers/router";
 import { FakeProvider } from "../providers/fake";
 import { loadMembers, type LoadedMembers } from "../members/load";
-import { loadEnv, MissingApiKeyError } from "../config/env";
+import { loadEnv, MissingApiKeyError, MissingGeminiKeyError } from "../config/env";
 import { DEBATE_ROUNDS } from "../config/models";
 import { toMemberView, type MemberView } from "../core/view";
 import { riksmote as riksmoteOf } from "../core/riksdag";
+import { applyModel, assertUsable, type ProviderState, type ProviderStatus } from "../core/models";
 import type { ParlamentProvider, SessionBrief, VotingMode } from "../core/types";
 
 export type StreamEvent =
@@ -63,7 +66,10 @@ export function getDb(): Promise<ParlamentDb> {
 }
 
 export function getProvider(): ParlamentProvider {
-  state.provider ??= isFake() ? new FakeProvider({ chunkDelayMs: 15 }) : new ClaudeProvider();
+  // Each call goes to Claude or Gemini depending on the member's model.
+  state.provider ??= isFake()
+    ? new FakeProvider({ chunkDelayMs: 15 })
+    : new RouterProvider({ anthropic: () => new ClaudeProvider(), google: () => new GeminiProvider() });
   return state.provider;
 }
 
@@ -78,25 +84,34 @@ export function getMembers(): MembersStatus {
   }
 }
 
-export type KeyStatus = { ok: true; fake: boolean } | { ok: false; error: string };
+export type KeyStatus = ProviderStatus;
 
-/** Startup check: one cheap Models API call. Cached; pass recheck to try again after fixing .env.local. */
+async function check(fn: () => Promise<unknown>, missingType: new () => Error): Promise<ProviderState> {
+  try {
+    await fn();
+    return { ok: true, missing: false, error: null };
+  } catch (err) {
+    return { ok: false, missing: err instanceof missingType, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Startup check of both keys: one cheap Models API call each (the Gemini call also lists the models the key can
+ * use). Cached; pass recheck to try again after fixing .env.local.
+ */
 export function getKeyStatus(recheck = false): Promise<KeyStatus> {
   if (recheck || !state.keyStatus) {
     state.keyStatus = (async (): Promise<KeyStatus> => {
-      if (isFake()) return { ok: true, fake: true };
-      try {
-        await checkApiKey();
-        return { ok: true, fake: false };
-      } catch (err) {
-        const missing = err instanceof MissingApiKeyError;
-        return {
-          ok: false,
-          error: missing
-            ? err.message
-            : `${err instanceof Error ? err.message : String(err)} Parlament behöver en API-nyckel från console.anthropic.com i .env.local; ett Claude.ai-abonnemang fungerar inte.`,
-        };
-      }
+      const ok: ProviderState = { ok: true, missing: false, error: null };
+      if (isFake()) return { fake: true, ok: true, providers: { anthropic: ok, google: ok }, geminiModels: null };
+      let geminiModels: KeyStatus["geminiModels"] = null;
+      const [anthropic, google] = await Promise.all([
+        check(() => checkApiKey(), MissingApiKeyError),
+        check(async () => {
+          geminiModels = await listGeminiModels();
+        }, MissingGeminiKeyError),
+      ]);
+      return { fake: false, ok: anthropic.ok || google.ok, providers: { anthropic, google }, geminiModels };
     })();
   }
   return state.keyStatus;
@@ -109,11 +124,16 @@ export interface StartInput {
   briefId?: string | null;
   mode: VotingMode;
   rounds?: number;
+  /** One model for every member and the Speaker; empty keeps the model each member file names. */
+  model?: string | null;
 }
 
 /** Starts a debate in the background and returns its id; progress is delivered via subscribe(). */
 export async function startSession(input: StartInput): Promise<string> {
-  const loaded = loadMembers();
+  const files = loadMembers();
+  const [talman, ...members] = applyModel([files.talman, ...files.members], input.model);
+  const loaded = { ...files, members, talman: talman! };
+  assertUsable(await getKeyStatus(), [loaded.talman, ...loaded.members].map((m) => m.model));
   const db = await getDb();
   const briefView = input.briefId ? await getBrief(db, input.briefId) : null;
   if (input.briefId && !briefView) throw new Error(`Okänd bakgrund "${input.briefId}"`);

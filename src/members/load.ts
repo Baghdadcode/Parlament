@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { DEFAULT_MODEL, EFFORTS, LIMITS, MODEL_IDS } from "../config/models";
+import { DEFAULT_MODEL, EFFORTS, LIMITS, MODEL_ID_PATTERN } from "../config/models";
 import { getMembersDir } from "../config/env";
 import type { MemberDef } from "../core/types";
 
@@ -41,7 +41,7 @@ const frontmatterSchema = z.object({
   placement: z.coerce.number().optional(),
   /** How speakers address the Speaker: "Herr talman" or "Fru talman" (talman file only). */
   address: z.string().min(1).default("Herr talman"),
-  model: z.enum(MODEL_IDS).default(DEFAULT_MODEL),
+  model: z.string().regex(MODEL_ID_PATTERN, 'use a Claude or Gemini model ID, e.g. "claude-opus-5-5" or "gemini-3.1-pro-preview"').default(DEFAULT_MODEL),
   effort: z.enum(EFFORTS).default("medium"),
 });
 

@@ -8,6 +8,7 @@ import { Riksdagsbeslut } from "./Riksdagsbeslut";
 import { StageStepper } from "./StageStepper";
 import { Voteringstavla } from "./Voteringstavla";
 import { VoteMatrix } from "./VoteMatrix";
+import { modelLabel } from "../config/models";
 import { date, usd } from "./format";
 import { isLive, type SessionModel } from "./model";
 
@@ -69,6 +70,9 @@ export function SessionReport({ header, model }: { header: SessionHeader; model:
             {model.seats.length} partiledare · {model.rounds} replikskifte{model.rounds === 1 ? "" : "n"}
           </span>
           <span>{model.mode === "full" ? "Förberedande votering" : "Talmannen avgör"} + huvudvotering</span>
+          <span title="AI-modellen som partiledarna och talmannen använde">
+            AI: {[...new Set([...model.seats, model.talman].map((m) => m.model))].map(modelLabel).join(", ")}
+          </span>
           {header.brief ? (
             <span title="Bakgrunden som den såg ut när sessionen kördes">
               Bakgrund: {header.brief.name} (ändrad {date(header.brief.updatedAt)})

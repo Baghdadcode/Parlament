@@ -30,12 +30,32 @@ Requires Node 22.13 or newer.
 
 ```bash
 npm install
-cp .env.example .env.local   # then put your Console API key in it (console.anthropic.com)
+cp .env.example .env.local   # then add ANTHROPIC_API_KEY and/or GEMINI_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
-A Claude.ai subscription does not work: the app calls the Anthropic API with your own key, which stays on the
-server side. The database is created automatically in `data/parlament.db`.
+You need at least one of these keys. Both stay on the server side.
+- **Claude:** `ANTHROPIC_API_KEY`, a Console API key from console.anthropic.com. A Claude.ai subscription does not
+  work.
+- **Gemini:** `GEMINI_API_KEY`, a Gemini API key from aistudio.google.com/apikey.
+
+The database is created automatically in `data/parlament.db`.
+
+## Choosing the AI model
+
+The ask form has an **AI-modell** picker:
+- **Enligt ledamotsfilerna (default):** each member uses the `model:` in their own file. A sitting can therefore mix
+  Claude and Gemini, e.g. one party on Gemini and the rest on Claude.
+- **A Claude model (Opus 5.5, Sonnet 5.5):** every leader and the Speaker use it for this sitting.
+- **A Gemini model:** the same, with Gemini. With a working key the list comes from the Gemini API itself (the text
+  models your key can use, newest first). Without one, it shows Gemini 3.1 Pro and Gemini 3.8 Flash.
+
+Models whose key is missing are greyed out. A key that is set but rejected shows a warning at the top of the page.
+The sitting shows which model it ran on ("AI: …"), and the cost estimate follows the choice.
+
+Both providers get the same prompts. Gemini 3 maps the member's `effort` to its thinking level (low, medium, high),
+and caches the shared brief and debate implicitly. Gemini models missing from the price table, for example a new
+preview, are priced like their family (Pro or Flash), so their cost is approximate.
 
 ## Changing the members
 
@@ -55,7 +75,7 @@ Each participant is a markdown file in [`members/`](members/), which you can edi
 
 The frontmatter sets the name, party, abbreviation, colour, title on the name tag, seats (`seats`, drawn in the chamber
 and used to weight the main vote; the files ship with the 2022 election result, so update them to 2026), the place in
-the diagram from left to right (`placement`), model (`claude-opus-5-5` or the cheaper `claude-sonnet-5-5`), effort,
+the diagram from left to right (`placement`), model (`claude-opus-5-5`, the cheaper `claude-sonnet-5-5`, or a Gemini model such as `gemini-3.1-pro-preview`), effort,
 and whether the member takes part (`enabled`). In `talman.md`, `address` sets how speeches open ("Herr talman" or
 "Fru talman"). Everything below it is the persona,
 sent to the model verbatim: personality, ideology, debating style, relations to other parties and red lines.
@@ -93,7 +113,7 @@ A member who fails a round is dropped from later rounds. At least 60% of the mem
 vote still happens.
 
 **Cost:** a question with 8 Opus members makes about 41 API calls. The app estimates about $2 before you run it,
-and shows the real cost afterwards. Switching all members to Sonnet roughly halves the cost. To change the number of
+and shows the real cost afterwards. Sonnet roughly halves that, and Gemini Flash is cheaper still. To change the number of
 rebuttal rounds, set `DEBATE_ROUNDS` in `src/config/models.ts`.
 
 **Sound** is off by default. Turn it on with the "Ljud" button in the header: the gavel knocks at the start of each
@@ -108,7 +128,7 @@ with no audio files.
 | `PARLAMENT_FAKE=1 npm run dev` | Offline with canned answers (no key, no cost, separate database). PowerShell: `$env:PARLAMENT_FAKE="1"; npm run dev` |
 | `npm test` | Unit tests (never call the API) |
 | `npm run test:e2e` | Browser tests in fake mode |
-| `npm run test:live` | One short real-API debate with 3 Sonnet members (well under $1) |
+| `npm run test:live` | One short real debate with 3 Sonnet members (well under $1), plus one on Gemini Flash if `GEMINI_API_KEY` is set |
 | `npm run lint` / `npm run typecheck` | Checks |
 
 See `ROADMAP.md` for what is done and the defaults chosen along the way.

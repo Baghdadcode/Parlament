@@ -10,22 +10,13 @@ import type {
   VoteOutput,
   VoteRequest,
 } from "../core/types";
+import { safeCost } from "./shared";
 
-const usage = (stage: UsageRecord["stage"], advisorId: string | null, round: number | null = null): UsageRecord[] => [
-  {
-    stage,
-    advisorId,
-    round,
-    model: "claude-opus-5-5",
-    inputTokens: 1000,
-    outputTokens: 500,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    costUsd: (1000 * 4 + 500 * 20) / 1_000_000,
-    stopReason: "end_turn",
-    fellBack: false,
-  },
-];
+/** Fixed token counts, priced at the member's model so the cost follows the chosen model. */
+const usage = (stage: UsageRecord["stage"], advisorId: string | null, model: string, round: number | null = null): UsageRecord[] => {
+  const counts = { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  return [{ stage, advisorId, round, model, ...counts, costUsd: safeCost(model, counts), stopReason: "end_turn", fellBack: false }];
+};
 
 export interface FakeProviderOptions {
   /** Member id -> the round in which that member fails to speak. */
@@ -77,7 +68,7 @@ export class FakeProvider implements ParlamentProvider {
             req.round === 1 ? "Jag har lagt till en årlig uppföljning." : "Står fast.",
           ].join("\n");
     await this.stream(text, req.onText);
-    return { value: text, usage: usage(req.round === 0 ? "opening" : "debate", m.id, req.round) };
+    return { value: text, usage: usage(req.round === 0 ? "opening" : "debate", m.id, m.model, req.round) };
   }
 
   private async stream(text: string, onText?: (delta: string) => void): Promise<void> {
@@ -113,7 +104,7 @@ export class FakeProvider implements ParlamentProvider {
           reasoning: `Placerad som nummer ${i + 1}.`,
         })),
       },
-      usage: usage("rank", req.reviewer.id),
+      usage: usage("rank", req.reviewer.id, req.reviewer.model),
     };
   }
 
@@ -141,7 +132,7 @@ export class FakeProvider implements ParlamentProvider {
       "Förslag B och E ville gå längre och snabbare.",
     ].join("\n");
     await this.stream(text, req.onText);
-    return { value: text, usage: usage("synthesize", req.talman.id) };
+    return { value: text, usage: usage("synthesize", req.talman.id, req.talman.model) };
   }
 
   async vote(req: VoteRequest): Promise<CallResult<VoteOutput>> {
@@ -155,7 +146,7 @@ export class FakeProvider implements ParlamentProvider {
       nej: "Vi röstar nej; förslaget räcker inte.",
       avstar: "Vi avstår; förslaget har både bra och dåliga delar.",
     }[choice];
-    return { value: { choice, explanation }, usage: usage("vote", id) };
+    return { value: { choice, explanation }, usage: usage("vote", id, req.member.model) };
   }
 }
 

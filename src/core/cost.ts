@@ -1,4 +1,4 @@
-import { PRICING, type ModelId } from "../config/models";
+import { pricingFor } from "../config/models";
 import type { UsageRecord } from "./types";
 
 export interface TokenCounts {
@@ -10,7 +10,7 @@ export interface TokenCounts {
 
 /** inputTokens is the uncached input only (as the API reports it); cache tokens are billed separately. */
 export function computeCostUsd(model: string, t: TokenCounts): number {
-  const p = PRICING[model as ModelId];
+  const p = pricingFor(model);
   if (!p) throw new Error(`No pricing configured for model "${model}"`);
   return (
     (t.inputTokens * p.inputPerMTok +

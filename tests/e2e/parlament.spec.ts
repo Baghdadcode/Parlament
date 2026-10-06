@@ -56,6 +56,22 @@ test("Speaker-decides mode skips the preliminary vote but still holds the main v
   await expect(page.getByText("Förberedande votering (anonym rangordning av slutförslagen)")).toHaveCount(0);
 });
 
+test("the AI model can be switched to Gemini for a sitting", async ({ page }) => {
+  await page.goto("/");
+  const picker = page.getByLabel("AI-modell");
+  await expect(picker).toHaveValue(""); // default: the model each member file names
+  await expect(picker.locator("optgroup")).toHaveCount(3);
+  await picker.selectOption({ label: "Gemini 3.1 Pro" });
+  await expect(page.getByText("Alla partiledare och talmannen använder den här modellen")).toBeVisible();
+  await expect(page.getByText(/Uppskattad kostnad: ~\$/)).toBeVisible();
+  await page.getByLabel("Din fråga till riksdagen").fill("Ska elområdena slopas?");
+  await page.getByRole("button", { name: "Fråga riksdagen" }).click();
+  await expect(page.getByText("Kammaren har bifallit förslaget.")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("AI: Gemini 3.1 Pro", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Alla anföranden" }).click();
+  await expect(page.getByRole("article", { name: "Ebba Busch" }).getByText(/Gemini 3\.1 Pro/)).toBeVisible();
+});
+
 test("sound is off by default and can be turned on", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "🔇 Ljud av" }).click();

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { date, usd } from "./format";
 import type { BriefView, MemberView } from "../core/view";
+import type { ModelChoices } from "../core/models";
 import type { VotingMode } from "../core/types";
 
 export function AskForm({
@@ -12,16 +13,21 @@ export function AskForm({
   rounds,
   briefs,
   canRunAtAll,
+  models,
 }: {
   members: MemberView[];
   rounds: number;
   briefs: BriefView[];
   canRunAtAll: boolean;
+  models: ModelChoices;
 }) {
   const router = useRouter();
   const [question, setQuestion] = useState("");
   const [briefId, setBriefId] = useState<string>("");
   const [mode, setMode] = useState<VotingMode>("full");
+  const [model, setModel] = useState<string>(models.defaultValue);
+  const allModels = models.groups.flatMap((g) => g.options);
+  const selectedModel = allModels.find((o) => o.value === model);
   const [estimate, setEstimate] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +40,7 @@ export function AskForm({
         const res = await fetch("/api/estimate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ briefId: briefId || null, mode, question }),
+          body: JSON.stringify({ briefId: briefId || null, mode, question, model: model || null }),
         });
         setEstimate(res.ok ? ((await res.json()) as { usd: number }).usd : null);
       } catch {
@@ -42,7 +48,7 @@ export function AskForm({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [briefId, mode, question]);
+  }, [briefId, mode, question, model]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +58,7 @@ export function AskForm({
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, briefId: briefId || null, mode }),
+        body: JSON.stringify({ question, briefId: briefId || null, mode, model: model || null }),
       });
       const body = (await res.json()) as { id?: string; error?: string };
       if (!res.ok || !body.id) throw new Error(body.error ?? `Förfrågan misslyckades (${res.status})`);
@@ -63,7 +69,7 @@ export function AskForm({
     }
   }
 
-  const canRun = canRunAtAll && question.trim().length >= 3 && !submitting;
+  const canRun = canRunAtAll && !!selectedModel?.available && question.trim().length >= 3 && !submitting;
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -92,6 +98,35 @@ export function AskForm({
           Visa ledamöter
         </Link>
       </p>
+
+      <div>
+        <label htmlFor="model" className="mb-1 block text-sm font-medium">
+          AI-modell
+        </label>
+        <select
+          id="model"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="w-full rounded-lg border border-zinc-300 bg-transparent p-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          {models.groups.map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {g.options.map((o) => (
+                <option key={o.value || "files"} value={o.value} disabled={!o.available}>
+                  {o.label}
+                  {o.note ? ` (${o.note})` : ""}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-zinc-500">
+          {model
+            ? "Alla partiledare och talmannen använder den här modellen i den här debatten."
+            : "Varje partiledare använder modellen i sin fil (model: …), så du kan blanda Claude och Gemini."}
+          {allModels.some((o) => !o.available) && " Gråa modeller saknar en fungerande nyckel i .env.local."}
+        </p>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>

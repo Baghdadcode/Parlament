@@ -18,7 +18,7 @@ seats: 107               # mandat: ritas i kammaren och väger rösten i huvudvo
 placement: 2             # plats i kammardiagrammet, vänster (1) till höger
 enabled: true            # false = sitter över
 order: 1                 # ordning i gränssnittet
-model: claude-opus-5-5   # eller claude-sonnet-5-5 (billigare)
+model: claude-opus-5-5   # eller claude-sonnet-5-5, eller en Gemini-modell som gemini-3.1-pro-preview
 effort: medium           # low | medium | high | xhigh | max
 ---
 Fri markdown: personlighet, ideologi, debattstil, relationer, röda linjer ...
@@ -27,6 +27,8 @@ Fri markdown: personlighet, ideologi, debattstil, relationer, röda linjer ...
 - I `talman.md` anger `address: Herr talman` (eller `Fru talman`) hur partiledarna inleder sina anföranden.
 - Om ingen fil anger `seats` får alla en röst var i huvudvoteringen och lika många platser i kammaren.
 - Mandaten i filerna är från valet 2022; uppdatera dem till 2026 års resultat.
+- `model` gäller när du väljer "Enligt ledamotsfilerna" i AI-modellväljaren. Väljer du en modell där, används den
+  för alla. Claude-modeller kräver `ANTHROPIC_API_KEY` och Gemini-modeller `GEMINI_API_KEY`.
 - Allt under frontmatter blir personans beskrivning i prompten, ordagrant.
 - `<!-- HTML-kommentarer -->` tas bort innan texten skickas, så du kan skriva anteckningar till dig själv.
 - Lägg till en ny fil för att lägga till en deltagare; sätt `enabled: false` eller ta bort filen för att ta bort en.

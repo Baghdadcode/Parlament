@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { modelLabel } from "../config/models";
 import { Markdown } from "./Markdown";
 import { PartyBadge } from "./PartyChip";
 import { roundLabel } from "./format";
@@ -85,7 +86,7 @@ export function DebateRounds({ model }: { model: SessionModel }) {
                 <p className="text-sm text-zinc-400">Förbereder sitt anförande…</p>
               )}
               <footer className="mt-auto pt-2 text-[11px] text-zinc-400">
-                {seat.party} · {seat.model.replace("claude-", "")} · {seat.effort}
+                {seat.party} · {modelLabel(seat.model)} · {seat.effort}
               </footer>
             </article>
           );

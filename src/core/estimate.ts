@@ -1,4 +1,4 @@
-import { PRICING, type ModelId } from "../config/models";
+import { PRICING, pricingFor } from "../config/models";
 import type { MemberDef, VotingMode } from "./types";
 
 /**
@@ -38,7 +38,7 @@ const tokensFromChars = (chars: number) => Math.ceil(chars / 4);
 export function estimateSessionCost(input: EstimateInput): number {
   const briefTok = tokensFromChars(input.briefChars ?? 0);
   const questionTok = tokensFromChars(input.questionChars ?? 0);
-  const price = (model: string) => PRICING[model as ModelId] ?? PRICING["claude-opus-5-5"];
+  const price = (model: string) => pricingFor(model) ?? PRICING["claude-opus-5-5"]!;
   const call = (model: string, inTok: number, sharedTok: number, outTok: number) => {
     const p = price(model);
     const shared = sharedTok * (p.cacheWritePerMTok + p.cacheReadPerMTok) * 0.5;

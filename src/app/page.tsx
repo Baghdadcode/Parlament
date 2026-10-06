@@ -6,6 +6,7 @@ import { PartyBadge } from "../components/PartyChip";
 import { dateTime, usd } from "../components/format";
 import { DEBATE_ROUNDS } from "../config/models";
 import { toMemberView } from "../core/view";
+import { modelChoices } from "../core/models";
 import { listBriefs, listSessions } from "../db/queries";
 import { getDb, getKeyStatus, getMembers } from "../server/runtime";
 
@@ -20,7 +21,13 @@ export default async function Home() {
   return (
     <div className="space-y-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <AskForm members={members} rounds={DEBATE_ROUNDS} briefs={briefs} canRunAtAll={status.ok && loaded.ok} />
+        <AskForm
+          members={members}
+          rounds={DEBATE_ROUNDS}
+          briefs={briefs}
+          canRunAtAll={status.ok && loaded.ok}
+          models={modelChoices(status, loaded.ok ? [loaded.talman, ...loaded.members].map((m) => m.model) : [])}
+        />
         {members.length > 0 && (
           <aside className="rounded-xl border border-zinc-200 bg-gradient-to-b from-riks-paper to-white p-4 dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-950">
             <h2 className="font-serif text-base font-semibold">Kammaren</h2>
