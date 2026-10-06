@@ -3,7 +3,7 @@ import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/mess
 import { LIMITS } from "../config/models";
 import { getApiKey } from "../config/env";
 import type { CallResult, UsageRecord } from "../core/types";
-import { CallProvider, RefusalError, Semaphore, safeCost, sleep, type CallOptions } from "./shared";
+import { CallProvider, RefusalError, Semaphore, describeError, logRetry, safeCost, sleep, type CallOptions } from "./shared";
 
 export { RefusalError, Semaphore } from "./shared";
 
@@ -47,7 +47,11 @@ export class ClaudeProvider extends CallProvider {
 
     for (let attempt = 0; attempt < LIMITS.maxAttempts; attempt++) {
       try {
-        const message = await this.gate.run(() => this.stream(opts, maxTokens));
+        opts.onStatus?.({ kind: "queued" });
+        const message = await this.gate.run(() => {
+          opts.onStatus?.({ kind: "started" });
+          return this.stream(opts, maxTokens);
+        });
         usage.push(...this.toUsage(message, opts));
 
         // Always check stop_reason before reading content.
@@ -69,7 +73,11 @@ export class ClaudeProvider extends CallProvider {
         if (err instanceof RefusalError) throw err;
         lastError = err;
         if (!isRetryable(err)) throw err;
+        if (attempt + 1 >= LIMITS.maxAttempts) break;
         const wait = retryAfterMs(err) ?? this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random());
+        const reason = describeError(err);
+        logRetry("Claude", opts, reason, wait, attempt + 1, LIMITS.maxAttempts);
+        opts.onStatus?.({ kind: "retrying", reason, waitMs: wait, attempt: attempt + 1, maxAttempts: LIMITS.maxAttempts });
         await sleep(wait);
       }
     }
@@ -100,6 +108,14 @@ export class ClaudeProvider extends CallProvider {
       messages: [{ role: "user", content: opts.user }],
     });
     if (opts.onText) stream.on("text", opts.onText);
+    if (opts.onStatus) {
+      let thinking = false;
+      stream.on("thinking", () => {
+        if (thinking) return;
+        thinking = true;
+        opts.onStatus?.({ kind: "thinking" });
+      });
+    }
     return stream.finalMessage();
   }
 

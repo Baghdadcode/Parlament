@@ -4,7 +4,7 @@ import { mentions, speakingTime, speakingTimeForWords, wordCount } from "../core
 import { OPENING_WORD_CAP, REBUTTAL_WORD_CAP } from "../members/prompts";
 import { Markdown } from "./Markdown";
 import { Avatar } from "./PartyChip";
-import { roundLabel } from "./format";
+import { phaseLong, roundLabel } from "./format";
 import type { Anforande } from "./model";
 import type { MemberView } from "../core/view";
 
@@ -68,7 +68,7 @@ export function Rostrum({ item, seats }: { item: Anforande | null; seats: Member
         ) : s.text ? (
           <Markdown text={s.text} className={`font-serif text-[15px] ${s.status === "streaming" ? "caret" : ""}`} />
         ) : (
-          <p className="text-sm text-zinc-400">{seat.name} går upp i talarstolen…</p>
+          <p className={`text-sm ${s.phase?.kind === "retrying" ? "text-amber-700 dark:text-amber-400" : "text-zinc-400"}`}>{phaseLong(seat.name, s.phase)}</p>
         )}
       </div>
     </section>

@@ -3,7 +3,7 @@ import type { StreamEvent } from "../server/runtime";
 import type { MemberView, RankingView, SessionDetailView, TallyView } from "../core/view";
 import type { SessionState } from "../core/orchestrator";
 import type { FinalVoteTally } from "../core/riksdag";
-import type { VoteChoice, VotingMode } from "../core/types";
+import type { CallStatus, VoteChoice, VotingMode } from "../core/types";
 
 export type Stage = SessionState;
 
@@ -11,6 +11,8 @@ export interface StatementState {
   text: string;
   status: "pending" | "streaming" | "done" | "failed";
   error?: string;
+  /** Before any text: where the call is (queued, sent, thinking, waiting to retry). */
+  phase?: CallStatus;
 }
 
 export interface VoteState {
@@ -49,6 +51,8 @@ export interface SessionModel extends SessionMeta {
   costUsd: number;
   error: string | null;
   saved: boolean;
+  /** Latest notice while waiting (e.g. rate limiting); cleared when progress resumes. */
+  notice: string | null;
 }
 
 export function initialModel(meta: SessionMeta): SessionModel {
@@ -68,6 +72,7 @@ export function initialModel(meta: SessionMeta): SessionModel {
     costUsd: 0,
     error: null,
     saved: false,
+    notice: null,
   };
 }
 
@@ -80,19 +85,24 @@ function setStatement(m: SessionModel, round: number, seatId: string, f: (prev: 
 export function reduce(m: SessionModel, e: StreamEvent): SessionModel {
   switch (e.type) {
     case "state":
-      return { ...m, stage: e.state };
+      return { ...m, stage: e.state, notice: e.state === "done" || e.state === "failed" ? null : m.notice };
     case "round":
       return { ...m, round: e.round };
     case "statement_delta":
-      return setStatement(m, e.round, e.seatId, (p) => ({ text: p.text + e.text, status: "streaming" }));
+      return { ...setStatement(m, e.round, e.seatId, (p) => ({ text: p.text + e.text, status: "streaming" })), notice: null };
     case "statement_done":
-      return setStatement(m, e.round, e.seatId, (p) => ({ ...p, status: "done" }));
+      return { ...setStatement(m, e.round, e.seatId, (p) => ({ ...p, status: "done", phase: undefined })), notice: null };
+    case "statement_status":
+      // Only a speech that has not started writing shows its phase.
+      return setStatement(m, e.round, e.seatId, (p) => (p.status === "pending" ? { ...p, phase: e.status } : p));
+    case "notice":
+      return { ...m, notice: e.text };
     case "statement_failed":
       return setStatement(m, e.round, e.seatId, () => ({ text: "", status: "failed", error: e.error }));
     case "labels":
       return { ...m, labels: e.labels };
     case "ranking_done":
-      return { ...m, rankings: [...m.rankings, { reviewerSeatId: e.reviewerId, reviewerLabel: e.reviewerLabel, items: e.items }] };
+      return { ...m, notice: null, rankings: [...m.rankings, { reviewerSeatId: e.reviewerId, reviewerLabel: e.reviewerLabel, items: e.items }] };
     case "ranking_failed":
       return { ...m, failedReviewers: [...m.failedReviewers, { seatId: e.reviewerId, error: e.error }] };
     case "tally":
@@ -101,9 +111,9 @@ export function reduce(m: SessionModel, e: StreamEvent): SessionModel {
       return { ...m, costUsd: e.totalUsd };
     case "verdict_delta":
       // A full vote that reaches the decision without a tally means the Speaker decided alone.
-      return { ...m, verdict: m.verdict + e.text, effectiveMode: m.mode === "full" && !m.tally ? "chairman" : m.effectiveMode };
+      return { ...m, notice: null, verdict: m.verdict + e.text, effectiveMode: m.mode === "full" && !m.tally ? "chairman" : m.effectiveMode };
     case "vote_done":
-      return { ...m, votes: { ...m.votes, [e.seatId]: { choice: e.choice, explanation: e.explanation, weight: e.weight } } };
+      return { ...m, notice: null, votes: { ...m.votes, [e.seatId]: { choice: e.choice, explanation: e.explanation, weight: e.weight } } };
     case "vote_result":
       return { ...m, votes: Object.fromEntries(e.votes.map((v) => [v.seatId, v])), finalTally: e.tally };
     case "saved":
@@ -180,5 +190,6 @@ export function modelFromDetail(d: SessionDetailView): SessionModel {
     costUsd: d.totalCostUsd,
     error: d.error,
     saved: true,
+    notice: null,
   };
 }

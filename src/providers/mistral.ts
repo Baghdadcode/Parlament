@@ -4,11 +4,13 @@ import { ConnectionError, MistralError, RequestTimeoutError } from "@mistralai/m
 import { LIMITS, modelLabel, type Effort } from "../config/models";
 import { getMistralApiKey, mistralTier } from "../config/env";
 import type { CallResult, UsageRecord } from "../core/types";
-import { CallProvider, Pacer, Semaphore, safeCost, sleep, type CallOptions } from "./shared";
+import { CallProvider, Pacer, Semaphore, describeError, logRetry, safeCost, sleep, type CallOptions } from "./shared";
 
 /** The part of the SDK client this provider uses; tests pass a stand-in. */
 export interface MistralClient {
-  chat: { stream(request: ChatCompletionStreamRequest): Promise<AsyncIterable<CompletionEvent>> };
+  chat: {
+    stream(request: ChatCompletionStreamRequest, options?: { fetchOptions?: { signal?: AbortSignal } }): Promise<AsyncIterable<CompletionEvent>>;
+  };
   models: { list(): Promise<ModelList> };
 }
 
@@ -20,6 +22,18 @@ export interface MistralProviderOptions {
   minIntervalMs?: number;
   maxConcurrent?: number;
   maxAttempts?: number;
+  /** Abort and retry a stream that sends nothing for this long. */
+  stallTimeoutMs?: number;
+}
+
+/** A reasoning model streams its thinking continuously, so this much silence means the connection has stalled. */
+const STALL_TIMEOUT_MS = 90_000;
+
+class StallError extends Error {
+  constructor(ms: number) {
+    super(`Mistral skickade inget på ${Math.round(ms / 1000)} s`);
+    this.name = "StallError";
+  }
 }
 
 /** Pacing defaults per plan; MISTRAL_MIN_INTERVAL_MS and MISTRAL_MAX_CONCURRENT override them. */
@@ -36,8 +50,10 @@ export function mistralPacing(): { minIntervalMs: number; maxConcurrent: number;
 
 function isRetryable(err: unknown): boolean {
   if (err instanceof MistralError) return err.statusCode === 408 || err.statusCode === 429 || err.statusCode >= 500;
-  return err instanceof ConnectionError || err instanceof RequestTimeoutError;
+  return err instanceof ConnectionError || err instanceof RequestTimeoutError || err instanceof StallError;
 }
+
+const isRateLimit = (err: unknown) => err instanceof MistralError && err.statusCode === 429;
 
 function retryAfterMs(err: unknown): number | null {
   if (!(err instanceof MistralError)) return null;
@@ -60,6 +76,8 @@ function deltaText(content: unknown): string {
     .join("");
 }
 
+const hasThinking = (content: unknown) => Array.isArray(content) && content.some((c) => !!c && typeof c === "object" && c.type === "thinking");
+
 interface StreamResult {
   text: string;
   finishReason: string | null;
@@ -78,6 +96,8 @@ export class MistralProvider extends CallProvider {
   private readonly pacer: Pacer;
   private readonly backoffBaseMs: number;
   private readonly maxAttempts: number;
+  private readonly baseConcurrency: number;
+  private readonly stallTimeoutMs: number;
   /** Models that rejected the reasoning setting; they are called without it. */
   private readonly noReasoning = new Set<string>();
 
@@ -86,10 +106,23 @@ export class MistralProvider extends CallProvider {
     const pacing = mistralPacing();
     // The SDK's own retries are off by default; retries (with Retry-After) are handled below.
     this.client = opts.client ?? new Mistral({ apiKey: getMistralApiKey() });
-    this.gate = new Semaphore(opts.maxConcurrent ?? pacing.maxConcurrent);
+    this.baseConcurrency = opts.maxConcurrent ?? pacing.maxConcurrent;
+    this.gate = new Semaphore(this.baseConcurrency);
     this.pacer = new Pacer(opts.minIntervalMs ?? pacing.minIntervalMs);
     this.backoffBaseMs = opts.backoffBaseMs ?? 2000;
     this.maxAttempts = opts.maxAttempts ?? pacing.maxAttempts;
+    this.stallTimeoutMs = opts.stallTimeoutMs ?? STALL_TIMEOUT_MS;
+  }
+
+  /** Rate-limited: one request at a time, and a longer gap between them. */
+  private throttle(): void {
+    this.pacer.slowDown();
+    this.gate.resize(1);
+  }
+
+  /** A success: ease back towards the configured pace. */
+  private ease(): void {
+    if (this.pacer.recover()) this.gate.resize(this.baseConcurrency);
   }
 
   protected async call<T>(opts: CallOptions, parse: (text: string) => T): Promise<CallResult<T>> {
@@ -99,10 +132,13 @@ export class MistralProvider extends CallProvider {
 
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       try {
+        opts.onStatus?.({ kind: "queued" });
         const r = await this.gate.run(async () => {
           await this.pacer.wait();
+          opts.onStatus?.({ kind: "started" });
           return this.stream(opts, maxTokens);
         });
+        this.ease();
         usage.push(this.toUsage(r, opts));
         if (r.finishReason === "length" || r.finishReason === "model_length") {
           if (maxTokens >= 64_000) throw new Error("Response hit max_tokens even after raising the limit");
@@ -126,7 +162,13 @@ export class MistralProvider extends CallProvider {
           continue;
         }
         if (!isRetryable(err) && !(err instanceof Error && err.message.startsWith("Mistral stopped"))) throw err;
-        await sleep(retryAfterMs(err) ?? this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random()));
+        if (attempt + 1 >= this.maxAttempts) break;
+        if (isRateLimit(err)) this.throttle();
+        const waitMs = retryAfterMs(err) ?? this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random());
+        const reason = describeError(err);
+        logRetry("Mistral", opts, reason, waitMs, attempt + 1, this.maxAttempts);
+        opts.onStatus?.({ kind: "retrying", reason, waitMs, attempt: attempt + 1, maxAttempts: this.maxAttempts });
+        await sleep(waitMs);
       }
     }
     throw lastError instanceof Error ? lastError : new Error("Mistral call failed after retries");
@@ -134,6 +176,28 @@ export class MistralProvider extends CallProvider {
 
   private async stream(opts: CallOptions, maxTokens: number): Promise<StreamResult> {
     const model = opts.seat.model;
+    // Our own stall timer replaces the SDK's 5-minute cap on the whole request, which a long reasoning answer can hit.
+    const abort = new AbortController();
+    let stalled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        stalled = true;
+        abort.abort();
+      }, this.stallTimeoutMs);
+    };
+    arm();
+    try {
+      return await this.read(opts, model, maxTokens, abort.signal, arm);
+    } catch (err) {
+      throw stalled ? new StallError(this.stallTimeoutMs) : err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async read(opts: CallOptions, model: string, maxTokens: number, signal: AbortSignal, alive: () => void): Promise<StreamResult> {
     const events = await this.client.chat.stream({
       model,
       maxTokens,
@@ -150,11 +214,17 @@ export class MistralProvider extends CallProvider {
             },
           }
         : {}),
-    });
+    }, { fetchOptions: { signal } });
     const r: StreamResult = { text: "", finishReason: null, promptTokens: 0, completionTokens: 0 };
+    let thinking = false;
     for await (const event of events) {
+      alive();
       const chunk = event.data;
       const choice = chunk.choices[0];
+      if (!thinking && hasThinking(choice?.delta.content)) {
+        thinking = true;
+        opts.onStatus?.({ kind: "thinking" });
+      }
       const delta = deltaText(choice?.delta.content);
       if (delta) {
         r.text += delta;
@@ -211,6 +281,8 @@ export async function listMistralModels(client?: MistralClient): Promise<Mistral
   const ids = new Set<string>();
   for (const m of list.data ?? []) {
     if (!("id" in m) || typeof m.id !== "string") continue;
+    // Deprecated models (Magistral, for one) are on their way out and can be slow; leave them out of the picker.
+    if ("deprecation" in m && m.deprecation) continue;
     const caps = "capabilities" in m ? (m.capabilities as { completionChat?: boolean } | undefined) : undefined;
     if (caps && caps.completionChat === false) continue;
     if (NOT_FOR_DEBATE.test(m.id) || !m.id.endsWith("-latest")) continue;

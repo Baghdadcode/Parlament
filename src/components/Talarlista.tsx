@@ -1,7 +1,7 @@
 "use client";
 
 import { speakingTime } from "../core/riksdag";
-import { roundLabel } from "./format";
+import { phaseShort, roundLabel } from "./format";
 import { Avatar } from "./PartyChip";
 import type { Anforande } from "./model";
 
@@ -49,7 +49,7 @@ export function Talarlista({
                         <span className="min-w-0 flex-1 truncate">
                           {it.seat.name} <span className={selected ? "text-zinc-300" : "text-zinc-500"}>({it.seat.short})</span>
                         </span>
-                        <Status status={s.status} text={s.text} selected={selected} />
+                        <Status statement={s} selected={selected} />
                       </button>
                     </li>
                   );
@@ -65,7 +65,8 @@ export function Talarlista({
 
 export const anfKey = (a: Pick<Anforande, "round" | "seat">) => `${a.round}:${a.seat.id}`;
 
-function Status({ status, text, selected }: { status: string; text: string; selected: boolean }) {
+function Status({ statement, selected }: { statement: Anforande["statement"]; selected: boolean }) {
+  const { status, text, phase } = statement;
   if (status === "done") return <span className={`shrink-0 tabular-nums ${selected ? "text-zinc-200" : "text-zinc-500"}`}>✓ {speakingTime(text)}</span>;
   if (status === "streaming")
     return (
@@ -74,5 +75,11 @@ function Status({ status, text, selected }: { status: string; text: string; sele
       </span>
     );
   if (status === "failed") return <span className="shrink-0 text-red-600">uteblev</span>;
-  return <span className="shrink-0 text-zinc-400">väntar</span>;
+  if (!phase) return <span className="shrink-0 text-zinc-400">väntar</span>;
+  const tone = phase.kind === "retrying" ? "text-amber-600 dark:text-amber-400" : phase.kind === "thinking" ? "text-sky-600 dark:text-sky-400" : "text-zinc-400";
+  return (
+    <span className={`shrink-0 ${phase.kind === "thinking" ? "animate-pulse" : ""} ${selected ? "text-zinc-200" : tone}`} title={phase.kind === "retrying" ? phase.reason : undefined}>
+      {phaseShort(phase)}
+    </span>
+  );
 }

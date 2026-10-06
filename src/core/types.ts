@@ -73,6 +73,13 @@ export interface TranscriptEntry {
   text: string;
 }
 
+/** Progress of one model call, so the UI can say why nothing has appeared yet. */
+export type CallStatus =
+  | { kind: "queued" }
+  | { kind: "started" }
+  | { kind: "thinking" }
+  | { kind: "retrying"; reason: string; waitMs: number; attempt: number; maxAttempts: number };
+
 export interface SpeakRequest {
   member: MemberDef;
   question: string;
@@ -85,6 +92,7 @@ export interface SpeakRequest {
   /** Everything said in earlier rounds; empty in the opening round. */
   transcript: TranscriptEntry[];
   onText?: (delta: string) => void;
+  onStatus?: (s: CallStatus) => void;
 }
 
 export interface LabeledAnswer {
@@ -97,6 +105,7 @@ export interface RankRequest {
   question: string;
   brief?: string;
   answers: LabeledAnswer[];
+  onStatus?: (s: CallStatus) => void;
 }
 
 export interface ReviewItem {
@@ -123,6 +132,7 @@ export interface SynthesizeRequest {
   reviews: { reviewer: string; items: ReviewItem[] }[];
   tally?: TallyView;
   onText?: (delta: string) => void;
+  onStatus?: (s: CallStatus) => void;
 }
 
 export interface TallyView {
@@ -144,6 +154,7 @@ export interface VoteRequest {
   decision: string;
   /** The member's own final proposal from the debate. */
   ownProposal: string;
+  onStatus?: (s: CallStatus) => void;
 }
 
 export interface VoteOutput {

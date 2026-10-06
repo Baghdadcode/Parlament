@@ -63,6 +63,17 @@ describe("live session reducer", () => {
     expect(m).toMatchObject({ stage: "ranking", costUsd: 0.42, verdict: "## Beslut", effectiveMode: "full" });
     expect(m.rankings).toHaveLength(1);
   });
+  it("shows a waiting speech's phase and a notice, and clears the notice when text arrives", () => {
+    let m = init();
+    m = reduce(m, { type: "statement_status", seatId: "s", round: 0, status: { kind: "thinking" } });
+    m = reduce(m, { type: "notice", text: "Magdalena Andersson: för många förfrågningar – nytt försök om 4 s (1/7)" });
+    expect(m.statements[0]!.s).toMatchObject({ status: "pending", phase: { kind: "thinking" } });
+    expect(m.notice).toContain("nytt försök");
+    m = reduce(m, { type: "statement_delta", seatId: "s", round: 0, text: "Herr talman!" });
+    expect(m.notice).toBeNull();
+    m = reduce(m, { type: "statement_status", seatId: "s", round: 0, status: { kind: "queued" } });
+    expect(m.statements[0]!.s!.phase).toBeUndefined(); // a speech that is writing keeps its text, not a phase
+  });
   it("marks a full-vote session as Speaker-decided when the decision starts without a tally", () => {
     expect(reduce(init(), { type: "verdict_delta", text: "x" }).effectiveMode).toBe("chairman");
   });

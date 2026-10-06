@@ -149,4 +149,17 @@ describe("runSession (fake provider)", () => {
     expect(r.finalTally!.franvarande).toBe(19 + 16);
     expect(r.failedSeats).toContainEqual(expect.objectContaining({ seatId: "l", stage: "vote" }));
   });
+
+  it("passes call progress on as status events and retry notices", async () => {
+    class Slow extends FakeProvider {
+      override async speak(req: Parameters<FakeProvider["speak"]>[0]) {
+        req.onStatus?.({ kind: "retrying", reason: "för många förfrågningar (rate limit)", waitMs: 4000, attempt: 1, maxAttempts: 8 });
+        return super.speak(req);
+      }
+    }
+    const events: SessionEvent[] = [];
+    await runSession({ ...base, rounds: 0, onEvent: (e) => events.push(e) }, new Slow());
+    expect(events).toContainEqual(expect.objectContaining({ type: "statement_status", seatId: "s", round: 0, status: expect.objectContaining({ kind: "retrying" }) }));
+    expect(events).toContainEqual({ type: "notice", text: "Magdalena Andersson: för många förfrågningar (rate limit) – nytt försök om 4 s (1/7)" });
+  });
 });

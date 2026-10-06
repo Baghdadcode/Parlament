@@ -12,7 +12,7 @@ import {
 import { LIMITS, type Effort } from "../config/models";
 import { getGeminiApiKey } from "../config/env";
 import type { CallResult, UsageRecord } from "../core/types";
-import { CallProvider, RefusalError, Semaphore, safeCost, sleep, type CallOptions } from "./shared";
+import { CallProvider, RefusalError, Semaphore, describeError, logRetry, safeCost, sleep, type CallOptions } from "./shared";
 
 /** The part of the SDK client this provider uses; tests pass a stand-in. */
 export interface GeminiClient {
@@ -100,7 +100,11 @@ export class GeminiProvider extends CallProvider {
 
     for (let attempt = 0; attempt < LIMITS.maxAttempts; attempt++) {
       try {
-        const r = await this.gate.run(() => this.stream(opts, maxTokens));
+        opts.onStatus?.({ kind: "queued" });
+        const r = await this.gate.run(() => {
+          opts.onStatus?.({ kind: "started" });
+          return this.stream(opts, maxTokens);
+        });
         usage.push(this.toUsage(r, opts));
 
         if (r.blockReason) throw new RefusalError(r.blockReason);
@@ -122,7 +126,12 @@ export class GeminiProvider extends CallProvider {
           continue;
         }
         if (!isRetryable(err)) throw err;
-        await sleep(this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random()));
+        if (attempt + 1 >= LIMITS.maxAttempts) break;
+        const wait = this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random());
+        const reason = describeError(err);
+        logRetry("Gemini", opts, reason, wait, attempt + 1, LIMITS.maxAttempts);
+        opts.onStatus?.({ kind: "retrying", reason, waitMs: wait, attempt: attempt + 1, maxAttempts: LIMITS.maxAttempts });
+        await sleep(wait);
       }
     }
     throw lastError instanceof Error ? lastError : new Error("Gemini call failed after retries");

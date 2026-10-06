@@ -6,6 +6,7 @@ import { DEFAULT_TALMAN, speakerName } from "../members/load";
 import { extractProposal } from "../members/prompts";
 import { annotateLabels, tallyVotes, voteWeight, type FinalVote, type FinalVoteTally } from "./riksdag";
 import type {
+  CallStatus,
   LabeledAnswer,
   MemberDef,
   ParlamentProvider,
@@ -38,7 +39,11 @@ export type SessionEvent =
   | { type: "verdict_delta"; text: string }
   | { type: "vote_done"; seatId: string; choice: VoteChoice; explanation: string; weight: number }
   | { type: "vote_failed"; seatId: string; error: string }
-  | { type: "vote_result"; votes: FinalVote[]; tally: FinalVoteTally };
+  | { type: "vote_result"; votes: FinalVote[]; tally: FinalVoteTally }
+  /** Progress of a speech that has not produced text yet: queued, thinking, waiting to retry. */
+  | { type: "statement_status"; seatId: string; round: number; status: CallStatus }
+  /** Something the viewer should know while waiting, e.g. the provider is rate limiting us. */
+  | { type: "notice"; text: string };
 
 export interface TallyEvent {
   entries: { seatId: string; points: number; maxPossible: number; fraction: number }[];
@@ -104,6 +109,12 @@ export interface SessionResult {
   totalCostUsd: number;
 }
 
+/** A retry worth telling the viewer about, e.g. "Ebba Busch: för många förfrågningar – nytt försök om 12 s (2/7)". */
+function retryNotice(who: string, s: CallStatus): string | null {
+  if (s.kind !== "retrying") return null;
+  return `${who}: ${s.reason} – nytt försök om ${Math.max(1, Math.round(s.waitMs / 1000))} s (${s.attempt}/${s.maxAttempts - 1})`;
+}
+
 export async function runSession(input: SessionInput, provider: ParlamentProvider): Promise<SessionResult> {
   const emit = input.onEvent ?? (() => undefined);
   const talman = input.talman ?? DEFAULT_TALMAN;
@@ -162,6 +173,11 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
               address: talman.address,
               transcript,
               onText: (text) => emit({ type: "statement_delta", seatId: member.id, round, text }),
+              onStatus: (status) => {
+                emit({ type: "statement_status", seatId: member.id, round, status });
+                const notice = retryNotice(member.name, status);
+                if (notice) emit({ type: "notice", text: notice });
+              },
             });
             record(r.usage);
             emit({ type: "statement_done", seatId: member.id, round });
@@ -231,6 +247,10 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
               question: input.question,
               brief: input.brief,
               answers: anon.presented.map((p) => ({ label: p.label, text: p.text })),
+              onStatus: (status) => {
+                const notice = retryNotice(`${reviewer.name} (votering)`, status);
+                if (notice) emit({ type: "notice", text: notice });
+              },
             });
             record(r.usage);
             reviews.push(toReview(reviewer.id, r.value.items, anon.labelToAnswerId));
@@ -311,6 +331,10 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
       reviews: reviewsForChair,
       tally: tallyView,
       onText: (text) => emit({ type: "verdict_delta", text }),
+      onStatus: (status) => {
+        const notice = retryNotice(talman.name, status);
+        if (notice) emit({ type: "notice", text: notice });
+      },
     });
     record(verdict.usage);
     result.verdict = verdict.value;
@@ -333,6 +357,10 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
             brief: input.brief,
             decision: decisionForVoters,
             ownProposal: a.text,
+            onStatus: (status) => {
+              const notice = retryNotice(`${member.name} (huvudvotering)`, status);
+              if (notice) emit({ type: "notice", text: notice });
+            },
           });
           record(r.usage);
           finalVotes.push({ seatId: member.id, choice: r.value.choice, explanation: r.value.explanation, weight: weight(member) });

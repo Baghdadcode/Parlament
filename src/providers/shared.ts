@@ -4,6 +4,7 @@ import { computeCostUsd } from "../core/cost";
 import { RANKING_JSON_SCHEMA, VOTE_JSON_SCHEMA, parseRanking, parseVote } from "../core/schemas";
 import type {
   CallResult,
+  CallStatus,
   MemberDef,
   ParlamentProvider,
   RankRequest,
@@ -37,9 +38,17 @@ export class RefusalError extends Error {
 export class Semaphore {
   private active = 0;
   private waiters: (() => void)[] = [];
-  constructor(private readonly max: number) {}
+  constructor(private max: number) {}
+  get limit(): number {
+    return this.max;
+  }
+  /** Changes how many may run at once; waiters re-check the new limit. */
+  resize(max: number): void {
+    this.max = Math.max(1, max);
+    for (const wake of this.waiters.splice(0)) wake();
+  }
   async run<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.active >= this.max) await new Promise<void>((resolve) => this.waiters.push(resolve));
+    while (this.active >= this.max) await new Promise<void>((resolve) => this.waiters.push(resolve));
     this.active++;
     try {
       return await fn();
@@ -55,7 +64,23 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Spaces out request starts, for providers that limit requests per second (Mistral's free tier). */
 export class Pacer {
   private nextAt = 0;
-  constructor(private readonly intervalMs: number) {}
+  private intervalMs: number;
+  constructor(private readonly baseMs: number) {
+    this.intervalMs = baseMs;
+  }
+  get interval(): number {
+    return this.intervalMs;
+  }
+  /** After a rate-limit error: at least double the gap (2 s minimum, 60 s maximum). */
+  slowDown(): void {
+    this.intervalMs = Math.min(60_000, Math.max(2_000, this.intervalMs * 2));
+  }
+  /** After a success: move back towards the configured gap. Returns true once it is back there. */
+  recover(): boolean {
+    this.intervalMs = Math.max(this.baseMs, Math.round(this.intervalMs * 0.8));
+    if (this.intervalMs - this.baseMs < 50) this.intervalMs = this.baseMs;
+    return this.intervalMs === this.baseMs;
+  }
   async wait(): Promise<void> {
     if (this.intervalMs <= 0) return;
     const now = Date.now();
@@ -79,6 +104,24 @@ export interface CallOptions {
   maxTokens: number;
   jsonSchema?: object;
   onText?: (delta: string) => void;
+  onStatus?: (s: CallStatus) => void;
+}
+
+/** Logged in the server terminal, so a slow sitting can be followed there too. */
+export function logRetry(provider: string, opts: CallOptions, reason: string, waitMs: number, attempt: number, max: number): void {
+  console.warn(
+    `[parlament] ${provider} ${opts.seat.model} (${opts.stage}${opts.advisorId ? ` ${opts.advisorId}` : ""}): ${reason}; retry ${attempt}/${max - 1} in ${Math.round(waitMs / 1000)} s`,
+  );
+}
+
+/** A short, readable reason for a failed attempt. */
+export function describeError(err: unknown): string {
+  const e = err as { status?: unknown; statusCode?: unknown } | null;
+  const status = e?.status ?? e?.statusCode;
+  if (status === 429) return "för många förfrågningar (rate limit)";
+  if (typeof status === "number" && status >= 500) return `serverfel ${status}`;
+  if (err instanceof Error) return err.message.slice(0, 120);
+  return String(err).slice(0, 120);
 }
 
 const briefCache = (brief?: string): string[] => (brief ? [briefBlock(brief)] : []);
@@ -98,6 +141,7 @@ export const requests = {
       user: speakUser(req.question),
       maxTokens: 16_000,
       onText: req.onText,
+      onStatus: req.onStatus,
     };
   },
   rank(req: RankRequest): CallOptions {
@@ -111,6 +155,7 @@ export const requests = {
       user: rankUser(req.question, req.answers),
       maxTokens: 16_000,
       jsonSchema: RANKING_JSON_SCHEMA,
+      onStatus: req.onStatus,
     };
   },
   synthesize(req: SynthesizeRequest): CallOptions {
@@ -124,6 +169,7 @@ export const requests = {
       user: talmanUser(req),
       maxTokens: 32_000,
       onText: req.onText,
+      onStatus: req.onStatus,
     };
   },
   vote(req: VoteRequest): CallOptions {
@@ -137,6 +183,7 @@ export const requests = {
       user: voteUser(req),
       maxTokens: 16_000,
       jsonSchema: VOTE_JSON_SCHEMA,
+      onStatus: req.onStatus,
     };
   },
 };
