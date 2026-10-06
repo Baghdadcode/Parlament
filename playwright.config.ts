@@ -1,0 +1,18 @@
+import { defineConfig } from "@playwright/test";
+import { existsSync } from "node:fs";
+
+// Browser tests run the real app in offline fake mode: no API key, no cost.
+const executablePath = existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined;
+
+export default defineConfig({
+  testDir: "tests/e2e",
+  timeout: 60_000,
+  use: { baseURL: "http://localhost:3123", launchOptions: executablePath ? { executablePath } : {} },
+  webServer: {
+    command: "npx next dev -p 3123",
+    url: "http://localhost:3123",
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: { PARLAMENT_FAKE: "1", PARLAMENT_DB_PATH: "./data/e2e.db", NEXT_TELEMETRY_DISABLED: "1" },
+  },
+});

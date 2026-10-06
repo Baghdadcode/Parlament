@@ -1,0 +1,86 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { DEFAULT_TALMAN, loadMembers, MemberFileError, parseFrontmatter, parseMemberFile } from "../src/members/load";
+
+const file = (fm: string, body = "## Vem du är\nEn testperson.") => `---\n${fm}\n---\n${body}\n`;
+const valid = (id: string, short: string, extra = "") =>
+  file(`id: ${id}\nname: Test ${id}\nparty: Parti ${id}\nshort: ${short}\ncolor: "#123456"\n${extra}`);
+
+function dirWith(files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "members-"));
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
+  return dir;
+}
+
+describe("shipped member files", () => {
+  const { members, talman, all } = loadMembers("members");
+
+  it("seat the 8 Riksdag party leaders in order, plus the Speaker", () => {
+    expect(members.map((m) => m.short)).toEqual(["S", "SD", "M", "V", "C", "KD", "MP", "L"]);
+    expect(talman.role).toBe("talman");
+    expect(talman.file).toBe("talman.md");
+    expect(all).toHaveLength(9);
+  });
+
+  it("have a persona, a colour and a valid model", () => {
+    for (const m of [...members, talman]) {
+      expect(m.persona.length).toBeGreaterThan(200);
+      expect(m.persona).not.toContain("<!--");
+      expect(m.color).toMatch(/^#/);
+      expect(m.model).toMatch(/^claude-/);
+    }
+  });
+});
+
+describe("parseMemberFile", () => {
+  it("parses frontmatter with quotes, comments and defaults", () => {
+    const m = parseMemberFile("x.md", file(`id: x\nname: "Anna Test"\nparty: Testpartiet\nshort: T # kort\ncolor: "#ff0000"\nenabled: ja`, "<!-- notis -->\nHej."));
+    expect(m).toMatchObject({ id: "x", name: "Anna Test", short: "T", role: "ledamot", enabled: true, model: "claude-opus-5-5", effort: "medium", persona: "Hej." });
+    expect(m.hash).toHaveLength(12);
+  });
+
+  it("names the file and field in errors", () => {
+    expect(() => parseMemberFile("bad.md", file(`id: x\nname: X\nparty: P\nshort: X\ncolor: red`))).toThrow(/bad\.md: color/);
+    expect(() => parseMemberFile("bad.md", file(`id: x\nname: X\nparty: P\nshort: X\ncolor: "#fff"\nmodel: gpt-5`))).toThrow(/bad\.md: model/);
+    expect(() => parseMemberFile("bad.md", "no frontmatter")).toThrow(MemberFileError);
+    expect(() => parseMemberFile("bad.md", file(`id: x\nname: X\nparty: P\nshort: X\ncolor: "#fff"`, "<!-- bara kommentar -->"))).toThrow(/persona/);
+  });
+
+  it("parseFrontmatter rejects lines that are not key: value", () => {
+    expect(() => parseFrontmatter("---\njust text\n---\nbody")).toThrow(/key: value/);
+  });
+});
+
+describe("loadMembers", () => {
+  it("skips disabled members and README.md, and falls back to a default Speaker", () => {
+    const dir = dirWith({
+      "README.md": "# not a member",
+      "a.md": valid("a", "A", "order: 2"),
+      "b.md": valid("b", "B", "order: 1"),
+      "c.md": valid("c", "C"),
+      "d.md": valid("d", "D", "enabled: false"),
+    });
+    const r = loadMembers(dir);
+    expect(r.members.map((m) => m.id)).toEqual(["b", "a", "c"]);
+    expect(r.all).toHaveLength(4);
+    expect(r.talman).toBe(DEFAULT_TALMAN);
+  });
+
+  it("rejects duplicate ids, too few members and two Speakers", () => {
+    expect(() => loadMembers(dirWith({ "a.md": valid("a", "A"), "b.md": valid("a", "B"), "c.md": valid("c", "C") }))).toThrow(/already used/);
+    expect(() => loadMembers(dirWith({ "a.md": valid("a", "A"), "b.md": valid("b", "B") }))).toThrow(/3 to 9/);
+    expect(() =>
+      loadMembers(
+        dirWith({
+          "a.md": valid("a", "A"),
+          "b.md": valid("b", "B"),
+          "c.md": valid("c", "C"),
+          "t1.md": valid("t1", "T1", "role: talman"),
+          "t2.md": valid("t2", "T2", "role: talman"),
+        }),
+      ),
+    ).toThrow(/talman/);
+  });
+});

@@ -1,0 +1,131 @@
+import type { Effort, ModelId } from "../config/models";
+
+export type MemberRole = "ledamot" | "talman";
+
+/** One debater (a party leader) or the Speaker, loaded from a members/*.md file. */
+export interface MemberDef {
+  id: string;
+  name: string;
+  party: string;
+  /** Party abbreviation, e.g. "S". */
+  short: string;
+  /** CSS colour for the UI. */
+  color: string;
+  role: MemberRole;
+  enabled: boolean;
+  order: number;
+  /** The markdown body of the file (comments removed), sent verbatim as the persona. */
+  persona: string;
+  model: ModelId;
+  effort: Effort;
+  /** Short content hash: a session records exactly which version of the file it used. */
+  hash: string;
+  /** File name inside the members folder. */
+  file: string;
+}
+
+export type Stage = "opening" | "debate" | "rank" | "synthesize";
+
+export interface UsageRecord {
+  stage: Stage;
+  advisorId: string | null;
+  /** Debate round (0 = opening) for opening/debate calls; null otherwise. */
+  round: number | null;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
+  stopReason: string | null;
+  fellBack: boolean;
+}
+
+export interface CallResult<T> {
+  value: T;
+  usage: UsageRecord[];
+}
+
+export interface SessionBrief {
+  id: string;
+  name: string;
+  content: string;
+  updatedAt: Date;
+}
+
+/** "full": blind vote, then the Speaker writes the decision. "chairman": the Speaker decides without a vote. */
+export type VotingMode = "full" | "chairman";
+
+/** One statement already made in the debate, attributed by name (the debate itself is open). */
+export interface TranscriptEntry {
+  round: number;
+  memberId: string;
+  /** "Magdalena Andersson (S)" */
+  speaker: string;
+  text: string;
+}
+
+export interface SpeakRequest {
+  member: MemberDef;
+  question: string;
+  brief?: string;
+  /** 0 = opening statement, 1..totalRounds = rebuttal rounds. */
+  round: number;
+  totalRounds: number;
+  /** Everything said in earlier rounds; empty in the opening round. */
+  transcript: TranscriptEntry[];
+  onText?: (delta: string) => void;
+}
+
+export interface LabeledAnswer {
+  label: string;
+  text: string;
+}
+
+export interface RankRequest {
+  reviewer: MemberDef;
+  question: string;
+  brief?: string;
+  answers: LabeledAnswer[];
+}
+
+export interface ReviewItem {
+  label: string;
+  rank: number;
+  correctness: number;
+  reasoningQuality: number;
+  usefulness: number;
+  risksCovered: number;
+  reasoning: string;
+}
+
+export interface RankingOutput {
+  items: ReviewItem[];
+}
+
+/** Everything the Speaker sees, already mapped to one canonical set of labels. */
+export interface SynthesizeRequest {
+  talman: MemberDef;
+  question: string;
+  brief?: string;
+  mode: VotingMode;
+  answers: LabeledAnswer[];
+  reviews: { reviewer: string; items: ReviewItem[] }[];
+  tally?: TallyView;
+  onText?: (delta: string) => void;
+}
+
+export interface TallyView {
+  scores: { label: string; points: number; maxPossible: number; fraction: number }[];
+  winnerLabel: string | null;
+  marginFraction: number;
+  closeRace: boolean;
+  tie: boolean;
+}
+
+/** The three-method interface; other providers can be added without touching the orchestrator. */
+export interface ParlamentProvider {
+  speak(req: SpeakRequest): Promise<CallResult<string>>;
+  rank(req: RankRequest): Promise<CallResult<RankingOutput>>;
+  synthesize(req: SynthesizeRequest): Promise<CallResult<string>>;
+}
