@@ -1,14 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, max } from "drizzle-orm";
 import type { ParlamentDb } from "./client";
 import * as t from "./schema";
 import { bordaCount } from "../core/borda";
 import type { BriefView, MemberView, SessionDetailView, SessionSummaryView } from "../core/view";
+import type { FinalVote } from "../core/riksdag";
 import type { VotingMode } from "../core/types";
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
-const stripHash = ({ hash: _hash, ...m }: MemberView & { hash: string }): MemberView => m;
+/** Drops the hash and fills fields that sessions stored before they existed. */
+const stripHash = ({ hash: _hash, ...m }: MemberView & { hash: string }, i = 0): MemberView => ({
+  ...m,
+  title: m.title ?? "Partiledare",
+  seats: m.seats ?? 0,
+  placement: m.placement ?? i,
+});
 
 const toBriefView = (b: typeof t.briefs.$inferSelect): BriefView => ({
   id: b.id,
@@ -62,6 +69,8 @@ function toSummary(r: typeof t.sessions.$inferSelect): SessionSummaryView {
   return {
     id: r.id,
     question: r.question,
+    riksmote: r.riksmote,
+    number: r.number,
     mode: r.mode as VotingMode,
     rounds: r.rounds,
     state: r.state,
@@ -69,7 +78,14 @@ function toSummary(r: typeof t.sessions.$inferSelect): SessionSummaryView {
     closeRace: r.closeRace,
     totalCostUsd: r.totalCostUsd,
     createdAt: r.createdAt.toISOString(),
+    finalTally: r.finalTally ?? null,
   };
+}
+
+/** Highest sitting number used in a riksmöte so far (0 when none). */
+export async function maxSittingNumber(db: ParlamentDb, riksmote: string): Promise<number> {
+  const row = await db.select({ n: max(t.sessions.number) }).from(t.sessions).where(eq(t.sessions.riksmote, riksmote)).get();
+  return row?.n ?? 0;
 }
 
 export async function listSessions(db: ParlamentDb, limit = 100): Promise<SessionSummaryView[]> {
@@ -81,12 +97,13 @@ export async function getSessionDetail(db: ParlamentDb, id: string): Promise<Ses
   const s = await db.select().from(t.sessions).where(eq(t.sessions.id, id)).get();
   if (!s) return null;
   const briefRow = s.briefId ? await db.select({ name: t.briefs.name }).from(t.briefs).where(eq(t.briefs.id, s.briefId)).get() : undefined;
-  const [statementRows, proposalRows, rankingRows, verdict, usageRows] = await Promise.all([
+  const [statementRows, proposalRows, rankingRows, verdict, usageRows, voteRows] = await Promise.all([
     db.select().from(t.statements).where(eq(t.statements.sessionId, id)).all(),
     db.select().from(t.proposals).where(eq(t.proposals.sessionId, id)).orderBy(asc(t.proposals.label)).all(),
     db.select().from(t.rankings).where(eq(t.rankings.sessionId, id)).orderBy(asc(t.rankings.id)).all(),
     db.select().from(t.verdicts).where(eq(t.verdicts.sessionId, id)).get(),
     db.select().from(t.usage).where(eq(t.usage.sessionId, id)).all(),
+    db.select().from(t.votes).where(eq(t.votes.sessionId, id)).orderBy(asc(t.votes.id)).all(),
   ]);
 
   const memberOfProposal = new Map(proposalRows.map((p) => [p.id, p.memberId]));
@@ -120,7 +137,7 @@ export async function getSessionDetail(db: ParlamentDb, id: string): Promise<Ses
     error: s.error,
     finishedAt: iso(s.finishedAt),
     brief: s.briefId && s.briefUpdatedAt ? { id: s.briefId, name: briefRow?.name ?? s.briefId, updatedAt: s.briefUpdatedAt.toISOString() } : null,
-    seats: s.seats.map(stripHash),
+    seats: s.seats.map((m, i) => stripHash(m, i)),
     talman: stripHash(s.talman),
     statements: statementRows
       .map((r) => ({ seatId: r.memberId, round: r.round, text: r.text, status: r.status, error: r.error }))
@@ -129,6 +146,9 @@ export async function getSessionDetail(db: ParlamentDb, id: string): Promise<Ses
     rankings: rankingList,
     tally,
     verdict: verdict?.text ?? null,
+    finalVotes: voteRows
+      .map((v): FinalVote => ({ seatId: v.memberId, choice: v.choice as FinalVote["choice"], explanation: v.explanation, weight: v.weight }))
+      .sort((a, b) => (order.get(a.seatId) ?? 99) - (order.get(b.seatId) ?? 99)),
     usage: {
       calls: usageRows.length,
       inputTokens: usageRows.reduce((n, u) => n + u.inputTokens, 0),

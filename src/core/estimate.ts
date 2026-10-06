@@ -16,6 +16,8 @@ const TYPICAL = {
   proposal: 350,
   rank: { output: 900 },
   talman: { system: 900, output: 3_000, perReviewLine: 60 },
+  /** Main vote: reads the Speaker's proposal and its own, answers with a short JSON. */
+  vote: { decision: 1_000, output: 700 },
 } as const;
 
 export interface EstimateInput {
@@ -56,5 +58,8 @@ export function estimateSessionCost(input: EstimateInput): number {
   }
   const reviews = input.mode === "full" ? n * (n - 1) * TYPICAL.talman.perReviewLine : 0;
   usd += call(input.talman.model, TYPICAL.talman.system + questionTok + TYPICAL.proposal * n + reviews, briefTok, TYPICAL.talman.output);
+  for (const m of input.members) {
+    usd += call(m.model, TYPICAL.system + questionTok + TYPICAL.vote.decision + TYPICAL.proposal, briefTok, TYPICAL.vote.output);
+  }
   return usd;
 }

@@ -8,4 +8,4 @@ export const dateTime = (iso: string) =>
 /** Swedish ordinal: 1:a, 2:a, 3:e ... */
 export const ordinal = (n: number) => `${n}:${n % 10 === 1 || n % 10 === 2 ? (n % 100 === 11 || n % 100 === 12 ? "e" : "a") : "e"}`;
 
-export const roundLabel = (round: number) => (round === 0 ? "Öppning" : `Replik ${round}`);
+export const roundLabel = (round: number) => (round === 0 ? "Anföranden" : `Replikskifte ${round}`);

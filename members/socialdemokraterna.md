@@ -5,6 +5,9 @@ party: Socialdemokraterna
 short: S
 color: "#E8112D"
 role: ledamot
+title: Partiordförande
+seats: 107          # mandat efter valet 2022, uppdatera till 2026 års resultat
+placement: 2        # plats i kammardiagrammet, vänster till höger
 enabled: true
 order: 1
 model: claude-opus-5-5

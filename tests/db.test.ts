@@ -5,7 +5,7 @@ import { runSession } from "../src/core/orchestrator";
 import { FakeProvider } from "../src/providers/fake";
 import { loadMembers } from "../src/members/load";
 import * as t from "../src/db/schema";
-import { getSessionDetail, listBriefs, listSessions, saveBrief } from "../src/db/queries";
+import { getSessionDetail, listBriefs, listSessions, maxSittingNumber, saveBrief } from "../src/db/queries";
 
 const { members, talman } = loadMembers("members");
 const order = ["c", "mp", "s", "m", "sd", "v", "kd", "l"];
@@ -15,7 +15,7 @@ async function stored(id = "fixed-id", opts: ConstructorParameters<typeof FakePr
   const db = await openDb(":memory:");
   const brief = await upsertBrief(db, { id: "el", name: "Elpriser", content: "Fakta om elmarknaden..." });
   const result = await runSession({ question: "Q?", brief: brief.content, members, talman, mode: "full" }, new FakeProvider({ preferences, ...opts }));
-  await saveSession(db, { id, question: "Q?", members, talman, brief, result, createdAt: new Date() });
+  await saveSession(db, { id, question: "Q?", members, talman, riksmote: "2026/27", number: 14, brief, result, createdAt: new Date() });
   return { db, id };
 }
 
@@ -26,7 +26,8 @@ describe("persistence", () => {
     expect(await db.select().from(t.proposals).all()).toHaveLength(8);
     expect(await db.select().from(t.rankings).all()).toHaveLength(8 * 7);
     expect(await db.select().from(t.verdicts).all()).toHaveLength(1);
-    expect(await db.select().from(t.usage).all()).toHaveLength(24 + 8 + 1);
+    expect(await db.select().from(t.usage).all()).toHaveLength(24 + 8 + 1 + 8);
+    expect(await db.select().from(t.votes).all()).toHaveLength(8);
     expect(await db.select().from(t.members).all()).toHaveLength(9);
     const [session] = await db.select().from(t.sessions).all();
     expect(session!.briefUpdatedAt).toBeInstanceOf(Date);
@@ -48,7 +49,13 @@ describe("persistence", () => {
     expect(d.tally?.winnerSeatId).toBe("c");
     expect(d.winner?.short).toBe("C");
     expect(d.verdict).toContain("Reservationer");
-    expect(d.usage.calls).toBe(33);
+    expect(d.usage.calls).toBe(41);
+    expect(d).toMatchObject({ riksmote: "2026/27", number: 14 });
+    expect(d.finalVotes.map((v) => v.choice)).toEqual(["ja", "nej", "ja", "nej", "ja", "ja", "avstar", "ja"]);
+    expect(d.finalTally).toEqual({ ja: 107 + 68 + 24 + 19 + 16, nej: 73 + 24, avstar: 18, franvarande: 0, passed: true });
+    expect(d.seats.find((s) => s.id === "s")).toMatchObject({ title: "Partiordförande", seats: 107 });
+    expect(await maxSittingNumber(db, "2026/27")).toBe(14);
+    expect(await maxSittingNumber(db, "2027/28")).toBe(0);
 
     const list = await listSessions(db);
     expect(list[0]).toMatchObject({ id, rounds: 2, winner: expect.objectContaining({ id: "c" }) });

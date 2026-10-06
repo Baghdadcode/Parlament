@@ -5,6 +5,9 @@ party: Centerpartiet
 short: C
 color: "#009933"
 role: ledamot
+title: Partiledare
+seats: 24          # mandat efter valet 2022, uppdatera till 2026 års resultat
+placement: 4        # plats i kammardiagrammet, vänster till höger
 enabled: true
 order: 5
 model: claude-opus-5-5

@@ -24,6 +24,13 @@ describe("shipped member files", () => {
     expect(all).toHaveLength(9);
   });
 
+  it("carry seats (349 in all), titles and a left-to-right placement", () => {
+    expect(members.reduce((n, m) => n + m.seats, 0)).toBe(349);
+    expect([...members].sort((a, b) => a.placement - b.placement).map((m) => m.short)).toEqual(["V", "S", "MP", "C", "L", "KD", "M", "SD"]);
+    expect(members.find((m) => m.id === "mp")!.title).toBe("Språkrör");
+    expect(talman.address).toBe("Herr talman");
+  });
+
   it("have a persona, a colour and a valid model", () => {
     for (const m of [...members, talman]) {
       expect(m.persona.length).toBeGreaterThan(200);
@@ -37,7 +44,20 @@ describe("shipped member files", () => {
 describe("parseMemberFile", () => {
   it("parses frontmatter with quotes, comments and defaults", () => {
     const m = parseMemberFile("x.md", file(`id: x\nname: "Anna Test"\nparty: Testpartiet\nshort: T # kort\ncolor: "#ff0000"\nenabled: ja`, "<!-- notis -->\nHej."));
-    expect(m).toMatchObject({ id: "x", name: "Anna Test", short: "T", role: "ledamot", enabled: true, model: "claude-opus-5-5", effort: "medium", persona: "Hej." });
+    expect(m).toMatchObject({
+      id: "x",
+      name: "Anna Test",
+      short: "T",
+      role: "ledamot",
+      enabled: true,
+      model: "claude-opus-5-5",
+      effort: "medium",
+      persona: "Hej.",
+      title: "Partiledare",
+      seats: 0,
+      placement: 50,
+      address: "Herr talman",
+    });
     expect(m.hash).toHaveLength(12);
   });
 

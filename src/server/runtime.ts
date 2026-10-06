@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { openDb, type ParlamentDb } from "../db/client";
 import { saveSession } from "../db/store";
-import { getBrief } from "../db/queries";
+import { getBrief, maxSittingNumber } from "../db/queries";
 import { runSession, type SessionEvent } from "../core/orchestrator";
 import { ClaudeProvider, checkApiKey } from "../providers/claude";
 import { FakeProvider } from "../providers/fake";
@@ -11,6 +11,7 @@ import { loadMembers, type LoadedMembers } from "../members/load";
 import { loadEnv, MissingApiKeyError } from "../config/env";
 import { DEBATE_ROUNDS } from "../config/models";
 import { toMemberView, type MemberView } from "../core/view";
+import { riksmote as riksmoteOf } from "../core/riksdag";
 import type { ParlamentProvider, SessionBrief, VotingMode } from "../core/types";
 
 export type StreamEvent =
@@ -21,6 +22,9 @@ export type StreamEvent =
       question: string;
       mode: VotingMode;
       rounds: number;
+      riksmote: string;
+      number: number;
+      createdAt: string;
       seats: MemberView[];
       talman: MemberView;
       brief: { name: string; updatedAt: string } | null;
@@ -39,6 +43,8 @@ interface Globals {
   provider?: ParlamentProvider;
   keyStatus?: Promise<KeyStatus>;
   runs?: Map<string, LiveRun>;
+  /** Last sitting number handed out per riksmöte, so runs that start together get distinct numbers. */
+  numbers?: Map<string, number>;
 }
 
 // Survives Next.js dev hot reloads, which re-evaluate modules.
@@ -115,6 +121,11 @@ export async function startSession(input: StartInput): Promise<string> {
     ? { id: briefView.id, name: briefView.name, content: briefView.content, updatedAt: new Date(briefView.updatedAt) }
     : undefined;
   const rounds = input.rounds ?? DEBATE_ROUNDS;
+  const createdAt = new Date();
+  const riksmote = riksmoteOf(createdAt);
+  const numbers = (state.numbers ??= new Map());
+  const number = Math.max(await maxSittingNumber(db, riksmote), numbers.get(riksmote) ?? 0) + 1;
+  numbers.set(riksmote, number);
 
   const id = randomUUID();
   const run: LiveRun = { events: [], listeners: new Set(), finished: false };
@@ -129,12 +140,14 @@ export async function startSession(input: StartInput): Promise<string> {
     question: input.question,
     mode: input.mode,
     rounds,
+    riksmote,
+    number,
+    createdAt: createdAt.toISOString(),
     seats: loaded.members.map(toMemberView),
     talman: toMemberView(loaded.talman),
     brief: briefView ? { name: briefView.name, updatedAt: briefView.updatedAt } : null,
   });
 
-  const createdAt = new Date();
   void (async () => {
     try {
       const result = await runSession(
@@ -149,7 +162,17 @@ export async function startSession(input: StartInput): Promise<string> {
         },
         getProvider(),
       );
-      await saveSession(db, { id, question: input.question, members: loaded.members, talman: loaded.talman, brief, result, createdAt });
+      await saveSession(db, {
+        id,
+        question: input.question,
+        members: loaded.members,
+        talman: loaded.talman,
+        riksmote,
+        number,
+        brief,
+        result,
+        createdAt,
+      });
       push({ type: "saved", sessionId: id });
     } catch (err) {
       push({ type: "error", message: err instanceof Error ? err.message : String(err) });

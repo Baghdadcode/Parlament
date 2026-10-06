@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ReviewItem } from "./types";
+import type { ReviewItem, VoteOutput } from "./types";
 
 const score = z.number().int().min(1).max(5);
 
@@ -82,4 +82,36 @@ export function parseRanking(raw: string, expectedLabels: string[]): ReviewItem[
       reasoning: i.reasoning,
     }))
     .sort((a, b) => a.rank - b.rank);
+}
+
+export const VOTE_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    vote: { type: "string", enum: ["ja", "nej", "avstar"] },
+    explanation: { type: "string" },
+  },
+  required: ["vote", "explanation"],
+  additionalProperties: false,
+} as const;
+
+const voteSchema = z.object({ vote: z.enum(["ja", "nej", "avstar"]), explanation: z.string().trim().min(1) });
+
+export class InvalidVoteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidVoteError";
+  }
+}
+
+/** Parses a member's main-vote JSON. */
+export function parseVote(raw: string): VoteOutput {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new InvalidVoteError("vote is not valid JSON");
+  }
+  const parsed = voteSchema.safeParse(json);
+  if (!parsed.success) throw new InvalidVoteError(`vote schema mismatch: ${parsed.error.message}`);
+  return { choice: parsed.data.vote, explanation: parsed.data.explanation };
 }

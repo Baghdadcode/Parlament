@@ -2,7 +2,8 @@
 import type { StreamEvent } from "../server/runtime";
 import type { MemberView, RankingView, SessionDetailView, TallyView } from "../core/view";
 import type { SessionState } from "../core/orchestrator";
-import type { VotingMode } from "../core/types";
+import type { FinalVoteTally } from "../core/riksdag";
+import type { VoteChoice, VotingMode } from "../core/types";
 
 export type Stage = SessionState;
 
@@ -12,13 +13,26 @@ export interface StatementState {
   error?: string;
 }
 
-export interface SessionModel {
+export interface VoteState {
+  choice: VoteChoice | "franvarande";
+  explanation: string;
+  weight: number;
+}
+
+export interface SessionMeta {
   seats: MemberView[];
   talman: MemberView;
   mode: VotingMode;
-  effectiveMode: VotingMode;
   /** Rebuttal rounds after the opening. */
   rounds: number;
+  /** "2026/27" (empty for sessions stored before numbering existed). */
+  riksmote: string;
+  number: number;
+  createdAt: string | null;
+}
+
+export interface SessionModel extends SessionMeta {
+  effectiveMode: VotingMode;
   stage: Stage;
   /** The round being spoken right now (0 = opening). */
   round: number;
@@ -29,18 +43,18 @@ export interface SessionModel {
   tally: TallyView | null;
   labels: { label: string; seatId: string }[];
   verdict: string;
+  /** Main vote, member id -> vote (filled as votes come in). */
+  votes: Record<string, VoteState>;
+  finalTally: FinalVoteTally | null;
   costUsd: number;
   error: string | null;
   saved: boolean;
 }
 
-export function initialModel(seats: MemberView[], talman: MemberView, mode: VotingMode, rounds: number): SessionModel {
+export function initialModel(meta: SessionMeta): SessionModel {
   return {
-    seats,
-    talman,
-    mode,
-    effectiveMode: mode,
-    rounds,
+    ...meta,
+    effectiveMode: meta.mode,
     stage: "opening",
     round: 0,
     statements: {},
@@ -49,6 +63,8 @@ export function initialModel(seats: MemberView[], talman: MemberView, mode: Voti
     tally: null,
     labels: [],
     verdict: "",
+    votes: {},
+    finalTally: null,
     costUsd: 0,
     error: null,
     saved: false,
@@ -86,6 +102,10 @@ export function reduce(m: SessionModel, e: StreamEvent): SessionModel {
     case "verdict_delta":
       // A full vote that reaches the decision without a tally means the Speaker decided alone.
       return { ...m, verdict: m.verdict + e.text, effectiveMode: m.mode === "full" && !m.tally ? "chairman" : m.effectiveMode };
+    case "vote_done":
+      return { ...m, votes: { ...m.votes, [e.seatId]: { choice: e.choice, explanation: e.explanation, weight: e.weight } } };
+    case "vote_result":
+      return { ...m, votes: Object.fromEntries(e.votes.map((v) => [v.seatId, v])), finalTally: e.tally };
     case "saved":
       return { ...m, saved: true };
     case "error":
@@ -96,12 +116,40 @@ export function reduce(m: SessionModel, e: StreamEvent): SessionModel {
 }
 
 /** The round in which a member failed and dropped out, if any. */
-export function droppedIn(m: SessionModel, seatId: string): number | null {
+export function droppedIn(m: Pick<SessionModel, "statements">, seatId: string): number | null {
   for (const [round, map] of Object.entries(m.statements)) {
     if (map[seatId]?.status === "failed") return Number(round);
   }
   return null;
 }
+
+export interface Anforande {
+  round: number;
+  seat: MemberView;
+  /** "Anf. N" as in the record; null for a speech that never came. */
+  anf: number | null;
+  statement: StatementState;
+}
+
+/**
+ * Every speech in the order of the speakers' list: round by round, members in their order. Numbering runs on
+ * across rounds like the record's "Anf." numbers; members who dropped out are left out of later rounds.
+ */
+export function anforanden(m: Pick<SessionModel, "seats" | "rounds" | "statements">): Anforande[] {
+  const out: Anforande[] = [];
+  let n = 0;
+  for (let round = 0; round <= m.rounds; round++) {
+    for (const seat of m.seats) {
+      const dropped = droppedIn(m, seat.id);
+      if (dropped !== null && dropped < round) continue;
+      const statement = m.statements[round]?.[seat.id] ?? { text: "", status: "pending" as const };
+      out.push({ round, seat, anf: statement.status === "failed" ? null : ++n, statement });
+    }
+  }
+  return out;
+}
+
+export const isLive = (m: Pick<SessionModel, "saved" | "stage">) => !m.saved && m.stage !== "failed" && m.stage !== "done";
 
 export function modelFromDetail(d: SessionDetailView): SessionModel {
   const statements: SessionModel["statements"] = {};
@@ -114,8 +162,11 @@ export function modelFromDetail(d: SessionDetailView): SessionModel {
     seats: d.seats,
     talman: d.talman,
     mode: d.mode,
-    effectiveMode: d.effectiveMode,
     rounds: d.rounds,
+    riksmote: d.riksmote,
+    number: d.number,
+    createdAt: d.createdAt,
+    effectiveMode: d.effectiveMode,
     stage: d.state === "done" ? "done" : "failed",
     round: d.rounds,
     statements,
@@ -124,6 +175,8 @@ export function modelFromDetail(d: SessionDetailView): SessionModel {
     tally: d.tally,
     labels: d.labels,
     verdict: d.verdict ?? "",
+    votes: Object.fromEntries(d.finalVotes.map((v) => [v.seatId, { choice: v.choice, explanation: v.explanation, weight: v.weight }])),
+    finalTally: d.finalTally,
     costUsd: d.totalCostUsd,
     error: d.error,
     saved: true,

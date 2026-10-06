@@ -1,4 +1,5 @@
 import { integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { FinalVoteTally } from "../core/riksdag";
 import type { MemberView } from "../core/view";
 
 const now = () => new Date();
@@ -37,6 +38,9 @@ export const sessions = sqliteTable("sessions", {
   seats: text("seats", { mode: "json" }).$type<(MemberView & { hash: string })[]>().notNull(),
   talman: text("talman", { mode: "json" }).$type<MemberView & { hash: string }>().notNull(),
   rounds: integer("rounds").notNull(),
+  /** "2026/27" and the sitting number within it, as in "Riksdagens protokoll 2026/27:14". */
+  riksmote: text("riksmote").notNull().default(""),
+  number: integer("number").notNull().default(0),
   briefId: text("brief_id"),
   /** Snapshot so a session keeps the brief it actually saw, and when that brief was last edited. */
   briefContent: text("brief_content"),
@@ -48,6 +52,8 @@ export const sessions = sqliteTable("sessions", {
   winnerMemberId: text("winner_member_id"),
   marginFraction: real("margin_fraction"),
   closeRace: integer("close_race", { mode: "boolean" }),
+  /** Result of the main vote on the Speaker's proposal; null when no vote took place. */
+  finalTally: text("final_tally", { mode: "json" }).$type<FinalVoteTally>(),
   totalCostUsd: real("total_cost_usd").notNull().default(0),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(now),
   finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
@@ -97,6 +103,16 @@ export const verdicts = sqliteTable("verdicts", {
   text: text("text").notNull(),
   talmanId: text("talman_id").notNull(),
   mode: text("mode").notNull(),
+});
+
+/** The open main vote (huvudvotering): one row per member, absent members included. */
+export const votes = sqliteTable("votes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull(),
+  memberId: text("member_id").notNull(),
+  choice: text("choice").notNull(), // ja | nej | avstar | franvarande
+  explanation: text("explanation").notNull(),
+  weight: integer("weight").notNull(),
 });
 
 export const usage = sqliteTable("usage", {

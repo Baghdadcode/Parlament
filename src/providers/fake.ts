@@ -6,6 +6,9 @@ import type {
   SpeakRequest,
   SynthesizeRequest,
   UsageRecord,
+  VoteChoice,
+  VoteOutput,
+  VoteRequest,
 } from "../core/types";
 
 const usage = (stage: UsageRecord["stage"], advisorId: string | null, round: number | null = null): UsageRecord[] => [
@@ -30,6 +33,9 @@ export interface FakeProviderOptions {
   failRankFor?: string[];
   /** Member id -> preference order of member ids (best first) that this voter will rank. */
   preferences?: Record<string, string[]>;
+  /** Member id -> main-vote choice. Default: ja, except a demo split (V and SD nej, MP avstår). */
+  votes?: Record<string, VoteChoice>;
+  failVoteFor?: string[];
   /** Milliseconds between streamed chunks, to exercise live UIs. 0 (default) streams instantly. */
   chunkDelayMs?: number;
 }
@@ -38,11 +44,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Deterministic provider for tests and offline mode; never touches the network. */
 export class FakeProvider implements ParlamentProvider {
-  readonly calls = { speak: 0, rank: 0, synthesize: 0 };
-  readonly seen: { rank: RankRequest[]; synthesize: SynthesizeRequest[]; speak: SpeakRequest[] } = {
+  readonly calls = { speak: 0, rank: 0, synthesize: 0, vote: 0 };
+  readonly seen: { rank: RankRequest[]; synthesize: SynthesizeRequest[]; speak: SpeakRequest[]; vote: VoteRequest[] } = {
     rank: [],
     synthesize: [],
     speak: [],
+    vote: [],
   };
   constructor(private readonly opts: FakeProviderOptions = {}) {}
 
@@ -55,7 +62,7 @@ export class FakeProvider implements ParlamentProvider {
       req.round === 0
         ? [
             "## Förslag",
-            `Som ${m.name} föreslår jag att ${m.party} tar ansvar för frågan med en tydlig reform. [id:${m.id}]`,
+            `${req.address ?? "Herr talman"}! Som ${m.name} föreslår jag att ${m.party} tar ansvar för frågan med en tydlig reform. [id:${m.id}]`,
             "## Motivering",
             `Det här följer av ${m.short}:s grundvärderingar och av sakläget.`,
             "## Risker",
@@ -63,9 +70,9 @@ export class FakeProvider implements ParlamentProvider {
           ].join("\n")
         : [
             "## Replik",
-            `Jag har lyssnat på ${othersIn(req).join(" och ") || "kammaren"} och delar inte deras bild fullt ut.`,
+            `${req.address ?? "Herr talman"}! Jag har lyssnat på ${othersIn(req).join(" och ") || "kammaren"} och delar inte deras bild fullt ut.`,
             "## Förslag",
-            `Mitt förslag efter replikrunda ${req.round}: en finansierad reform som följs upp årligen. [id:${m.id}]`,
+            `Mitt förslag efter replikskifte ${req.round}: en finansierad reform som följs upp årligen. [id:${m.id}]`,
             "## Rörelse",
             req.round === 1 ? "Jag har lagt till en årlig uppföljning." : "Står fast.",
           ].join("\n");
@@ -114,8 +121,14 @@ export class FakeProvider implements ParlamentProvider {
     this.calls.synthesize++;
     this.seen.synthesize.push(req);
     const text = [
+      ...(req.mode === "chairman" ? ["Valt förslag: A. Det är det mest genomförbara förslaget.", ""] : []),
+      "## Rubrik",
+      "En finansierad reform med årlig uppföljning",
+      "",
       "## Beslut",
-      `Riksdagen beslutar att genomföra en finansierad reform (${req.mode === "full" ? "efter votering" : "talmannens avgörande"}).`,
+      "Riksdagen beslutar att",
+      `1. genomföra den finansierade reformen i förslag A (${req.mode === "full" ? "efter förberedande votering" : "talmannens avgörande"}),`,
+      "2. ge regeringen i uppdrag att följa upp reformen årligen.",
       "",
       "## Motivering",
       "Förslaget fick brett stöd i kammaren.",
@@ -124,12 +137,29 @@ export class FakeProvider implements ParlamentProvider {
       "Kostnaderna måste följas upp.",
       "",
       "## Reservationer",
-      "Förslag B ville gå längre.",
+      "### Reservation 1 (förslag B, E): Gå längre",
+      "Förslag B och E ville gå längre och snabbare.",
     ].join("\n");
     await this.stream(text, req.onText);
     return { value: text, usage: usage("synthesize", req.talman.id) };
   }
+
+  async vote(req: VoteRequest): Promise<CallResult<VoteOutput>> {
+    this.calls.vote++;
+    this.seen.vote.push(req);
+    const id = req.member.id;
+    if (this.opts.failVoteFor?.includes(id)) throw new Error(`fake vote failure: ${id}`);
+    const choice = this.opts.votes?.[id] ?? DEMO_VOTES[id] ?? "ja";
+    const explanation = {
+      ja: "Vi röstar ja eftersom förslaget går i rätt riktning.",
+      nej: "Vi röstar nej; förslaget räcker inte.",
+      avstar: "Vi avstår; förslaget har både bra och dåliga delar.",
+    }[choice];
+    return { value: { choice, explanation }, usage: usage("vote", id) };
+  }
 }
+
+export const DEMO_VOTES: Record<string, VoteChoice> = { v: "nej", sd: "nej", mp: "avstar" };
 
 function othersIn(req: SpeakRequest): string[] {
   const names = req.transcript.filter((e) => e.memberId !== req.member.id).map((e) => e.speaker);

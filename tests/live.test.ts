@@ -22,6 +22,7 @@ describe.skipIf(!process.env.LIVE)("live smoke test (real API)", () => {
     expect(result.state).toBe("done");
     expect(result.tally).toBeDefined();
     expect(result.verdict?.length).toBeGreaterThan(50);
+    expect(result.finalTally?.passed).not.toBeUndefined();
     const cacheReads = result.usage.reduce((s, u) => s + u.cacheReadTokens, 0);
     console.log(`cost $${result.totalCostUsd.toFixed(4)}, cache read tokens: ${cacheReads}`);
     expect(cacheReads).toBeGreaterThan(0);

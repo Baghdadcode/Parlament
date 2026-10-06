@@ -1,21 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { splitVerdict, toMemberView } from "../src/core/view";
+import { toMemberView } from "../src/core/view";
 import { estimateSessionCost } from "../src/core/estimate";
-import { droppedIn, initialModel, reduce } from "../src/components/model";
+import { anforanden, droppedIn, initialModel, reduce } from "../src/components/model";
 import { extractProposal } from "../src/members/prompts";
 import { loadMembers } from "../src/members/load";
 import { ordinal } from "../src/components/format";
 
 const { members, talman } = loadMembers("members");
-
-describe("splitVerdict", () => {
-  it("separates the reservations", () => {
-    expect(splitVerdict("## Beslut\nGör X.\n\n## Reservationer\nB ville annat.")).toEqual({ main: "## Beslut\nGör X.", minority: "B ville annat." });
-  });
-  it("returns no reservations when there are none", () => {
-    expect(splitVerdict("## Beslut\nGör X.")).toEqual({ main: "## Beslut\nGör X.", minority: null });
-  });
-});
 
 describe("extractProposal", () => {
   it("takes the Förslag section of a rebuttal and the whole opening", () => {
@@ -44,7 +35,7 @@ describe("estimateSessionCost", () => {
 
 describe("live session reducer", () => {
   const seats = members.map(toMemberView);
-  const init = () => initialModel(seats, toMemberView(talman), "full", 2);
+  const init = () => initialModel({ seats, talman: toMemberView(talman), mode: "full", rounds: 2, riksmote: "2026/27", number: 3, createdAt: null });
   it("accumulates streamed statements per round and marks them done or failed", () => {
     let m = init();
     m = reduce(m, { type: "statement_delta", seatId: "s", round: 0, text: "## För" });
@@ -70,6 +61,31 @@ describe("live session reducer", () => {
   });
   it("marks a full-vote session as Speaker-decided when the decision starts without a tally", () => {
     expect(reduce(init(), { type: "verdict_delta", text: "x" }).effectiveMode).toBe("chairman");
+  });
+  it("collects main votes as they come and the final tally", () => {
+    let m = reduce(init(), { type: "vote_done", seatId: "s", choice: "ja", explanation: "Bra.", weight: 107 });
+    expect(m.votes.s).toEqual({ choice: "ja", explanation: "Bra.", weight: 107 });
+    m = reduce(m, {
+      type: "vote_result",
+      votes: [
+        { seatId: "s", choice: "ja", explanation: "Bra.", weight: 107 },
+        { seatId: "v", choice: "franvarande", explanation: "", weight: 24 },
+      ],
+      tally: { ja: 107, nej: 0, avstar: 0, franvarande: 24, passed: true },
+    });
+    expect(m.votes.v!.choice).toBe("franvarande");
+    expect(m.finalTally?.passed).toBe(true);
+  });
+  it("numbers speeches across rounds like the record, leaving out members who dropped out", () => {
+    let m = init();
+    for (const s of seats) m = reduce(m, { type: "statement_done", seatId: s.id, round: 0 });
+    m = reduce(m, { type: "statement_failed", seatId: "v", round: 1, error: "x" });
+    const list = anforanden(m);
+    expect(list.filter((a) => a.round === 0).map((a) => a.anf)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const r1 = list.filter((a) => a.round === 1);
+    expect(r1.find((a) => a.seat.id === "v")!.anf).toBeNull();
+    expect(r1.map((a) => a.anf).filter(Boolean)).toEqual([9, 10, 11, 12, 13, 14, 15]);
+    expect(list.filter((a) => a.round === 2).map((a) => a.seat.id)).not.toContain("v");
   });
 });
 

@@ -12,7 +12,7 @@ export default function MembersPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-semibold">Ledamöter</h1>
+        <h1 className="font-serif text-xl font-semibold">Ledamöter</h1>
         <p className="text-sm text-zinc-500">
           Varje deltagare är en markdown-fil i <code>{dir}</code>. Redigera filen för att ändra personlighet, åsikter, debattstil, modell eller
           ansträngning; filerna läses på nytt vid varje fråga. Sätt <code>enabled: false</code> för att låta någon sitta över. Formatet beskrivs i{" "}
@@ -43,7 +43,10 @@ function MemberCard({ member: m }: { member: MemberDef }) {
       <summary className="flex cursor-pointer select-none flex-wrap items-center gap-2 text-sm">
         <PartyBadge member={m} />
         <span className="font-semibold">{m.name}</span>
-        <span className="text-zinc-500">{m.party}</span>
+        <span className="text-zinc-500">
+          {m.title}, {m.party}
+          {m.seats > 0 ? ` · ${m.seats} mandat` : ""}
+        </span>
         {m.role === "talman" && <span className="rounded bg-zinc-200 px-1.5 text-[11px] dark:bg-zinc-800">talman</span>}
         {!m.enabled && <span className="rounded bg-zinc-200 px-1.5 text-[11px] dark:bg-zinc-800">sitter över</span>}
         <span className="ml-auto font-mono text-[11px] text-zinc-400">

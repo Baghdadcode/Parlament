@@ -3,7 +3,7 @@ import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/mess
 import { LIMITS } from "../config/models";
 import { getApiKey } from "../config/env";
 import { computeCostUsd } from "../core/cost";
-import { RANKING_JSON_SCHEMA, parseRanking } from "../core/schemas";
+import { RANKING_JSON_SCHEMA, VOTE_JSON_SCHEMA, parseRanking, parseVote } from "../core/schemas";
 import type {
   CallResult,
   MemberDef,
@@ -14,8 +14,21 @@ import type {
   Stage,
   SynthesizeRequest,
   UsageRecord,
+  VoteOutput,
+  VoteRequest,
 } from "../core/types";
-import { briefBlock, memberSystem, rankSystem, rankUser, speakUser, talmanSystem, talmanUser, transcriptBlock } from "../members/prompts";
+import {
+  briefBlock,
+  memberSystem,
+  rankSystem,
+  rankUser,
+  speakUser,
+  talmanSystem,
+  talmanUser,
+  transcriptBlock,
+  voteSystem,
+  voteUser,
+} from "../members/prompts";
 
 export class RefusalError extends Error {
   constructor(readonly category: string | null) {
@@ -96,7 +109,7 @@ export class ClaudeProvider implements ParlamentProvider {
         advisorId: req.member.id,
         round: req.round,
         seat: req.member,
-        system: memberSystem(req.member, req.round, req.totalRounds),
+        system: memberSystem(req.member, req.round, req.totalRounds, req.address),
         cached,
         user: speakUser(req.question),
         maxTokens: 16_000,
@@ -138,6 +151,23 @@ export class ClaudeProvider implements ParlamentProvider {
         onText: req.onText,
       },
       (text) => text,
+    );
+  }
+
+  vote(req: VoteRequest): Promise<CallResult<VoteOutput>> {
+    return this.call(
+      {
+        stage: "vote",
+        advisorId: req.member.id,
+        round: null,
+        seat: req.member,
+        system: voteSystem(req.member),
+        cached: briefCache(req.brief),
+        user: voteUser(req),
+        maxTokens: 16_000,
+        jsonSchema: VOTE_JSON_SCHEMA,
+      },
+      parseVote,
     );
   }
 

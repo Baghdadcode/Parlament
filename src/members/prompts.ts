@@ -1,4 +1,4 @@
-import type { LabeledAnswer, MemberDef, ReviewItem, SynthesizeRequest, TranscriptEntry } from "../core/types";
+import type { LabeledAnswer, MemberDef, ReviewItem, SynthesizeRequest, TranscriptEntry, VoteRequest } from "../core/types";
 
 export const OPENING_WORD_CAP = 400;
 export const REBUTTAL_WORD_CAP = 350;
@@ -42,12 +42,24 @@ function personaBlock(member: MemberDef): string {
   ].join("\n");
 }
 
-export function memberSystem(member: MemberDef, round: number, totalRounds: number): string {
+/** How things are done in the chamber; shared by every statement. */
+function chamberManners(address: string): string {
+  return [
+    "## Kammarens sed",
+    `- Inled texten under din första rubrik med "${address}!", som i riksdagens kammare.`,
+    '- Tala om de andra partiledarna i tredje person och med namn ("Ulf Kristersson påstår att …"); tilltala dem aldrig med "du".',
+    "- Var skarp men saklig, som i en partiledardebatt. Inga personangrepp.",
+  ].join("\n");
+}
+
+export function memberSystem(member: MemberDef, round: number, totalRounds: number, address = "Herr talman"): string {
   const common = [
     personaBlock(member),
     "",
+    chamberManners(address),
+    "",
     "## Debattens gång",
-    `Frågan debatteras i en runda öppningsanföranden och ${totalRounds} replikrund${totalRounds === 1 ? "a" : "or"}. Därefter rangordnar partiledarna varandras slutliga förslag anonymt, utan partinamn, och talmannen skriver riksdagens beslut utifrån omröstningen.`,
+    `Frågan debatteras i en partiledardebatt: en runda anföranden och ${totalRounds} replikskifte${totalRounds === 1 ? "" : "n"}. Därefter rangordnar partiledarna varandras slutliga förslag anonymt i en förberedande votering, talmannen skriver ett förslag till riksdagsbeslut, och kammaren röstar ja eller nej om det i huvudvoteringen.`,
     "Det förslag som övertygar flest vinner. Det är alltså konkreta, genomförbara och väl underbyggda förslag som vinner röster, inte partiretorik. Du får ändra dig när ett argument är bättre, men bara så långt din persona rimligen skulle göra det.",
     "",
   ];
@@ -74,7 +86,7 @@ export function memberSystem(member: MemberDef, round: number, totalRounds: numb
 
   return [
     ...common,
-    `## Din uppgift nu: replikrunda ${round} av ${totalRounds}`,
+    `## Din uppgift nu: replikskifte ${round} av ${totalRounds}`,
     "Du har läst debatten hittills i <debatt>-blocket, inklusive dina egna tidigare inlägg.",
     `Använd exakt dessa rubriker, i denna ordning: ${REBUTTAL_SECTIONS.map((s) => `"## ${s}"`).join(", ")}.`,
     "- Replik: bemöt minst två andra partiledare med namn. Angrip svaga punkter konkret och ge erkännande där det är förtjänt.",
@@ -137,22 +149,29 @@ export function talmanSystem(talman: MemberDef, mode: SynthesizeRequest["mode"])
     "",
     "## Din uppgift",
     "Partiledarna har debatterat en fråga och lagt fram var sitt slutligt förslag. Förslagen är märkta med neutrala bokstäver; du vet inte vem som skrivit vilket, och bokstäverna betyder ingenting i sig.",
-    `Skriv riksdagens beslut på svenska, för en läsare som vill ha ett tydligt svar på frågan. Håll dig till cirka ${BESLUT_WORD_CAP} ord.`,
+    `Skriv ett förslag till riksdagsbeslut på svenska, för en läsare som vill ha ett tydligt svar på frågan. Håll dig till cirka ${BESLUT_WORD_CAP} ord.`,
+    "Förslaget går sedan till huvudvotering, där partiledarna röstar ja eller nej med sina mandat. Skriv det så att det kan samla en majoritet om det går, utan att tappa det som gjorde det vinnande förslaget bra.",
+    "",
+    "## Format",
+    "Använd exakt dessa avsnitt, i denna ordning:",
+    "- ## Rubrik: en kort rubrik på beslutet, högst åtta ord, på en rad.",
+    '- ## Beslut: börja med raden "Riksdagen beslutar att" och fortsätt med en numrerad lista med konkreta beslutspunkter (1., 2., …), där varje punkt fortsätter meningen.',
+    "- ## Motivering: varför riksdagen fattar beslutet.",
+    "- ## Risker: vad som kan gå fel och hur det följs upp.",
+    '- ## Reservationer (bara om något förslag tydligt gick emot beslutet): en underrubrik per reservation, "### Reservation 1 (förslag B, E): kort rubrik", följd av vad de förespråkade i stället. Inom parentesen anger du bokstäverna för de förslag som står bakom reservationen.',
   ];
   if (mode === "chairman") {
     return [
       ...common,
-      "Det blev ingen votering. Välj först det bästa förslaget och säg varför i en eller två meningar (börja med 'Valt förslag: <bokstav>'). Skriv sedan beslutet byggt på det och väv in de starkaste delarna av de andra förslagen.",
-      "Avsluta med '## Reservationer' bara om något förslag tydligt går emot beslutet; annars utelämnar du det avsnittet.",
-      "Använd dessa avsnitt: Valt förslag, ## Beslut, ## Motivering, ## Risker och eventuellt ## Reservationer.",
+      "Det blev ingen förberedande votering. Välj först det bästa förslaget och säg varför i en eller två meningar, på en rad före ## Rubrik som börjar med 'Valt förslag: <bokstav>'. Skriv sedan beslutet byggt på det och väv in de starkaste delarna av de andra förslagen.",
+      "Hänvisa till förslag med bokstav. Nämn inga partier eller partiledare.",
     ].join("\n");
   }
   return [
     ...common,
-    "Du får alla förslag, varje ledamots rangordning med motivering och Borda-sammanräkningen.",
+    "Du får alla förslag, varje ledamots rangordning i den förberedande voteringen med motivering, och Borda-sammanräkningen.",
     "Bygg beslutet på det vinnande förslaget och väv in de starkaste delarna av de andra. Vid JÄMNT LÖP slår du ihop de två främsta förslagen. Vid LIKA RÖSTETAL avgör du vilket förslag som leder och säger varför i en mening.",
-    "Avsluta med '## Reservationer' när ett förslag eller en ledamot tydligt gick emot beslutet (säg vad de förde fram); annars utelämnar du det avsnittet.",
-    "Använd dessa avsnitt: ## Beslut, ## Motivering, ## Risker och eventuellt ## Reservationer. Nämn inga partier eller partiledare; hänvisa till förslag med bokstav och till ledamöter som 'Ledamot 1', 'Ledamot 2'.",
+    "Nämn inga partier eller partiledare; hänvisa till förslag med bokstav och till ledamöter som 'Ledamot 1', 'Ledamot 2'.",
   ].join("\n");
 }
 
@@ -182,4 +201,23 @@ export function talmanUser(req: SynthesizeRequest): string {
     );
   }
   return parts.join("\n\n");
+}
+
+export function voteSystem(member: MemberDef): string {
+  return [
+    personaBlock(member),
+    "",
+    "## Din uppgift nu: huvudvotering",
+    "Debatten är slut och talmannen har lagt fram ett förslag till riksdagsbeslut. Kammaren röstar nu öppet, och ditt parti röstar med alla sina mandat.",
+    "Rösta ja (bifall), nej (avslag) eller avstår, så som du och ditt parti rimligen skulle rösta. Väg förslaget mot ditt eget slutförslag, dina röda linjer och vad det betyder för dina väljare. Ett beslut som går i rätt riktning kan vara värt ett ja även om det inte är ditt eget förslag.",
+    'Svara endast med JSON: "vote" är "ja", "nej" eller "avstar", och "explanation" är en röstförklaring på en eller två meningar, i första person och i din egen ton.',
+  ].join("\n");
+}
+
+export function voteUser(req: Pick<VoteRequest, "question" | "decision" | "ownProposal">): string {
+  return [
+    `Fråga till riksdagen:\n\n${req.question.trim()}`,
+    `Talmannens förslag till riksdagsbeslut:\n\n<beslutsförslag>\n${req.decision.trim()}\n</beslutsförslag>`,
+    `Ditt eget slutförslag i debatten:\n\n<ditt_förslag>\n${req.ownProposal.trim()}\n</ditt_förslag>`,
+  ].join("\n\n");
 }

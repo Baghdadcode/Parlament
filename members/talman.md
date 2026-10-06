@@ -5,6 +5,7 @@ party: Riksdagens talman
 short: TAL
 color: "#6B7280"
 role: talman
+address: Herr talman  # eller "Fru talman"; så inleder partiledarna sina anföranden
 enabled: true
 order: 99
 model: claude-opus-5-5
