@@ -1,12 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+// Unique per run, so the tests also pass against a database that earlier runs already filled.
+const run = Date.now().toString(36);
+
 test("a sitting: chamber, speakers' list, main vote, decision and the record", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Offline-läge (fejk)")).toBeVisible();
   await expect(page.getByText(/Uppskattad kostnad: ~\$/)).toBeVisible();
   await expect(page.getByRole("img", { name: "Kammaren" })).toBeVisible();
 
-  await page.getByLabel("Din fråga till riksdagen").fill("Hur ska elpriserna sänkas?");
+  await page.getByLabel("Din fråga till riksdagen").fill(`Hur ska elpriserna sänkas? (${run})`);
   await page.getByRole("button", { name: "Fråga riksdagen" }).click();
 
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 30_000 }); // first compile in dev mode is slow
@@ -42,8 +45,8 @@ test("a sitting: chamber, speakers' list, main vote, decision and the record", a
   await expect(page.getByRole("button", { name: "Skriv ut / spara som PDF" })).toBeVisible();
 
   await page.getByRole("link", { name: "Protokoll", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Hur ska elpriserna sänkas?" })).toBeVisible();
-  await expect(page.getByText("Bifall 234–97")).toBeVisible();
+  await expect(page.getByRole("link", { name: `Hur ska elpriserna sänkas? (${run})` })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(run) }).getByText("Bifall 234–97")).toBeVisible();
 });
 
 test("Speaker-decides mode skips the preliminary vote but still holds the main vote", async ({ page }) => {
@@ -96,7 +99,7 @@ test("the members page shows every file, title and seats", async ({ page }) => {
 test("background editor creates and edits a background", async ({ page }) => {
   await page.goto("/bakgrund");
   await page.getByRole("button", { name: "+ Ny bakgrund" }).click();
-  await page.getByLabel("Namn").fill("Elmarknaden");
+  await page.getByLabel("Namn").fill(`Elmarknaden ${run}`);
   await page.getByLabel(/^Innehåll/).fill("Elområden: fyra.");
   await page.getByRole("button", { name: "Skapa bakgrund" }).click();
   await expect(page.getByText("Sparad")).toBeVisible();
@@ -104,5 +107,5 @@ test("background editor creates and edits a background", async ({ page }) => {
   await page.getByRole("button", { name: "Spara ändringar" }).click();
   await expect(page.getByText("Sparad")).toBeVisible();
   await page.goto("/");
-  await expect(page.getByLabel("Bakgrund").locator("option", { hasText: "Elmarknaden" })).toHaveCount(1);
+  await expect(page.getByLabel("Bakgrund").locator("option", { hasText: `Elmarknaden ${run}` })).toHaveCount(1);
 });
