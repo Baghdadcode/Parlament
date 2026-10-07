@@ -5,7 +5,7 @@ import * as t from "./schema";
 import { bordaCount } from "../core/borda";
 import type { BriefView, MemberView, SessionDetailView, SessionSummaryView } from "../core/view";
 import type { FinalVote } from "../core/riksdag";
-import type { VotingMode } from "../core/types";
+import type { SessionFormat, VotingMode } from "../core/types";
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
@@ -71,6 +71,7 @@ function toSummary(r: typeof t.sessions.$inferSelect): SessionSummaryView {
     question: r.question,
     riksmote: r.riksmote,
     number: r.number,
+    format: r.format as SessionFormat,
     mode: r.mode as VotingMode,
     rounds: r.rounds,
     state: r.state,

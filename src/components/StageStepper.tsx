@@ -6,11 +6,18 @@ interface Step {
   label: string;
 }
 
-/** Anföranden › Replikskifte 1 › Replikskifte 2 › Förberedande votering › Talmannens förslag › Huvudvotering › Avslutat */
-export function StageStepper({ model }: { model: Pick<SessionModel, "stage" | "round" | "rounds" | "mode"> }) {
+/**
+ * Anföranden › Replikskifte 1 › Replikskifte 2 › Förberedande votering › Talmannens förslag › Huvudvotering › Avslutat,
+ * or for a 1-mot-1 debate: Anföranden › Replikskifte 1 › Replikskifte 2 › Talmannens avgörande › Avslutat.
+ */
+export function StageStepper({ model }: { model: Pick<SessionModel, "stage" | "round" | "rounds" | "mode" | "format"> }) {
+  const duel = model.format === "duell";
   const steps: Step[] = Array.from({ length: model.rounds + 1 }, (_, r) => ({ key: `round-${r}`, label: roundLabel(r) }));
-  if (model.mode === "full") steps.push({ key: "ranking", label: "Förberedande votering" });
-  steps.push({ key: "synthesizing", label: "Talmannens förslag" }, { key: "voting", label: "Huvudvotering" }, { key: "done", label: "Avslutat" });
+  if (duel) steps.push({ key: "judging", label: "Talmannens avgörande" }, { key: "done", label: "Avslutat" });
+  else {
+    if (model.mode === "full") steps.push({ key: "ranking", label: "Förberedande votering" });
+    steps.push({ key: "synthesizing", label: "Talmannens förslag" }, { key: "voting", label: "Huvudvotering" }, { key: "done", label: "Avslutat" });
+  }
 
   const currentKey =
     model.stage === "opening" || model.stage === "debating" ? `round-${model.round}` : model.stage === "counting" ? "ranking" : model.stage;

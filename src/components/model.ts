@@ -3,7 +3,7 @@ import type { StreamEvent } from "../server/runtime";
 import type { MemberView, RankingView, SessionDetailView, TallyView } from "../core/view";
 import type { SessionState } from "../core/orchestrator";
 import type { FinalVoteTally } from "../core/riksdag";
-import type { CallStatus, VoteChoice, VotingMode } from "../core/types";
+import type { CallStatus, SessionFormat, VoteChoice, VotingMode } from "../core/types";
 
 export type Stage = SessionState;
 
@@ -22,6 +22,8 @@ export interface VoteState {
 }
 
 export interface SessionMeta {
+  format: SessionFormat;
+  /** The debaters (every party leader, or the two of a 1-mot-1 debate in speaking order). */
   seats: MemberView[];
   talman: MemberView;
   mode: VotingMode;
@@ -48,6 +50,8 @@ export interface SessionModel extends SessionMeta {
   /** Main vote, member id -> vote (filled as votes come in). */
   votes: Record<string, VoteState>;
   finalTally: FinalVoteTally | null;
+  /** 1-mot-1: the winner the Speaker named. */
+  winnerSeatId: string | null;
   costUsd: number;
   error: string | null;
   saved: boolean;
@@ -69,6 +73,7 @@ export function initialModel(meta: SessionMeta): SessionModel {
     verdict: "",
     votes: {},
     finalTally: null,
+    winnerSeatId: null,
     costUsd: 0,
     error: null,
     saved: false,
@@ -116,6 +121,8 @@ export function reduce(m: SessionModel, e: StreamEvent): SessionModel {
       return { ...m, notice: null, votes: { ...m.votes, [e.seatId]: { choice: e.choice, explanation: e.explanation, weight: e.weight } } };
     case "vote_result":
       return { ...m, votes: Object.fromEntries(e.votes.map((v) => [v.seatId, v])), finalTally: e.tally };
+    case "duel_result":
+      return { ...m, winnerSeatId: e.winnerSeatId };
     case "saved":
       return { ...m, saved: true };
     case "error":
@@ -159,6 +166,9 @@ export function anforanden(m: Pick<SessionModel, "seats" | "rounds" | "statement
   return out;
 }
 
+/** Whose speech to feature once the debate is over: the 1-mot-1 winner, or the member behind the winning proposal. */
+export const winnerOf = (m: Pick<SessionModel, "winnerSeatId" | "tally">) => m.winnerSeatId ?? m.tally?.winnerSeatId ?? null;
+
 export const isLive = (m: Pick<SessionModel, "saved" | "stage">) => !m.saved && m.stage !== "failed" && m.stage !== "done";
 
 export function modelFromDetail(d: SessionDetailView): SessionModel {
@@ -169,6 +179,7 @@ export function modelFromDetail(d: SessionDetailView): SessionModel {
       s.status === "ok" ? { text: s.text ?? "", status: "done" } : { text: "", status: "failed", error: s.error ?? "Misslyckades" };
   }
   return {
+    format: d.format,
     seats: d.seats,
     talman: d.talman,
     mode: d.mode,
@@ -187,6 +198,7 @@ export function modelFromDetail(d: SessionDetailView): SessionModel {
     verdict: d.verdict ?? "",
     votes: Object.fromEntries(d.finalVotes.map((v) => [v.seatId, { choice: v.choice, explanation: v.explanation, weight: v.weight }])),
     finalTally: d.finalTally,
+    winnerSeatId: d.format === "duell" ? (d.winner?.id ?? null) : null,
     costUsd: d.totalCostUsd,
     error: d.error,
     saved: true,

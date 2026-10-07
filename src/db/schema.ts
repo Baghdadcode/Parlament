@@ -45,6 +45,8 @@ export const sessions = sqliteTable("sessions", {
   /** Snapshot so a session keeps the brief it actually saw, and when that brief was last edited. */
   briefContent: text("brief_content"),
   briefUpdatedAt: integer("brief_updated_at", { mode: "timestamp_ms" }),
+  /** "partiledardebatt" or "duell" (1 mot 1, the Speaker names the winner). */
+  format: text("format").notNull().default("partiledardebatt"),
   mode: text("mode").notNull(),
   effectiveMode: text("effective_mode").notNull(),
   state: text("state").notNull(),

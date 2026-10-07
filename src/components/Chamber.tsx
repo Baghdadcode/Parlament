@@ -6,7 +6,8 @@ import { DebateRounds } from "./DebateRounds";
 import { Hemicycle, VOTE_COLORS, type ReplikArc } from "./Hemicycle";
 import { Rostrum } from "./Rostrum";
 import { anfKey, Talarlista } from "./Talarlista";
-import { anforanden, isLive, type Anforande, type SessionModel } from "./model";
+import { anforanden, isLive, winnerOf, type Anforande, type SessionModel } from "./model";
+import { DuelStage } from "./DuelStage";
 
 /** Which speech the rostrum shows when the viewer has not picked one. */
 function autoPick(model: SessionModel, items: Anforande[]): Anforande | null {
@@ -16,7 +17,7 @@ function autoPick(model: SessionModel, items: Anforande[]): Anforande | null {
     // Follow the speakers' list: the first speech in order that is not finished yet.
     return inRound.find((i) => i.statement.status === "streaming" || i.statement.status === "pending") ?? inRound.at(-1) ?? null;
   }
-  const winner = model.tally?.winnerSeatId;
+  const winner = winnerOf(model);
   const spoken = items.filter((i) => i.statement.text);
   return (winner && spoken.filter((i) => i.seat.id === winner).at(-1)) || spoken.at(-1) || null;
 }
@@ -82,6 +83,9 @@ export function Chamber({ model }: { model: SessionModel }) {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-3">
+            {model.format === "duell" ? (
+              <DuelStage model={model} speakingId={current?.seat.id ?? null} onSelect={selectParty} />
+            ) : (
             <div className="rounded-xl border border-zinc-200 bg-gradient-to-b from-riks-paper to-white p-3 dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-950">
               <Hemicycle
                 seats={model.seats}
@@ -93,9 +97,16 @@ export function Chamber({ model }: { model: SessionModel }) {
               />
               <Legend model={model} colorBy={colorBy} />
             </div>
+            )}
             <Rostrum item={current} seats={model.seats} />
           </div>
-          <Talarlista items={items} rounds={model.rounds} currentKey={currentKey} onSelect={setPicked} />
+          <Talarlista
+            items={items}
+            rounds={model.rounds}
+            currentKey={currentKey}
+            onSelect={setPicked}
+            title={model.format === "duell" ? "Debatt 1 mot 1" : "Partiledardebatt"}
+          />
         </div>
       )}
     </section>

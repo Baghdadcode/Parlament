@@ -4,13 +4,14 @@ import { bordaCount, toReview, type Review, type Tally } from "./borda";
 import { sumCost } from "./cost";
 import { DEFAULT_TALMAN, speakerName } from "../members/load";
 import { extractProposal } from "../members/prompts";
-import { annotateLabels, tallyVotes, voteWeight, type FinalVote, type FinalVoteTally } from "./riksdag";
+import { annotateLabels, parseWinner, tallyVotes, voteWeight, type FinalVote, type FinalVoteTally } from "./riksdag";
 import type {
   CallStatus,
   LabeledAnswer,
   MemberDef,
   ParlamentProvider,
   ReviewItem,
+  SessionFormat,
   TallyView,
   TranscriptEntry,
   UsageRecord,
@@ -18,7 +19,7 @@ import type {
   VotingMode,
 } from "./types";
 
-export type SessionState = "opening" | "debating" | "ranking" | "counting" | "synthesizing" | "voting" | "done" | "failed";
+export type SessionState = "opening" | "debating" | "ranking" | "counting" | "synthesizing" | "judging" | "voting" | "done" | "failed";
 
 export type SessionEvent =
   | { type: "state"; state: SessionState }
@@ -43,7 +44,9 @@ export type SessionEvent =
   /** Progress of a speech that has not produced text yet: queued, thinking, waiting to retry. */
   | { type: "statement_status"; seatId: string; round: number; status: CallStatus }
   /** Something the viewer should know while waiting, e.g. the provider is rate limiting us. */
-  | { type: "notice"; text: string };
+  | { type: "notice"; text: string }
+  /** 1-mot-1: whom the Speaker named the winner (null when the judgment named neither). */
+  | { type: "duel_result"; winnerSeatId: string | null };
 
 export interface TallyEvent {
   entries: { seatId: string; points: number; maxPossible: number; fraction: number }[];
@@ -56,6 +59,8 @@ export interface TallyEvent {
 export interface SessionInput {
   question: string;
   brief?: string;
+  /** Default "partiledardebatt". A "duell" takes exactly two members, in speaking order. */
+  format?: SessionFormat;
   members: MemberDef[];
   mode: VotingMode;
   /** Rebuttal rounds after the opening (default DEBATE_ROUNDS). */
@@ -88,6 +93,7 @@ export interface SeatRanking {
 
 export interface SessionResult {
   state: "done" | "failed";
+  format: SessionFormat;
   mode: VotingMode;
   /** Mode actually used; a full vote falls back to the Speaker deciding when no ranking survives. */
   effectiveMode: VotingMode;
@@ -117,6 +123,7 @@ function retryNotice(who: string, s: CallStatus): string | null {
 }
 
 export async function runSession(input: SessionInput, provider: ParlamentProvider): Promise<SessionResult> {
+  if (input.format === "duell") return runDuel(input, provider);
   const emit = input.onEvent ?? (() => undefined);
   const talman = input.talman ?? DEFAULT_TALMAN;
   const rounds = Math.max(0, input.rounds ?? DEBATE_ROUNDS);
@@ -124,6 +131,7 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
   const failedSeats: SessionResult["failedSeats"] = [];
   const result: SessionResult = {
     state: "failed",
+    format: "partiledardebatt",
     mode: input.mode,
     effectiveMode: input.mode,
     rounds,
@@ -386,6 +394,108 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
     );
     result.finalTally = tallyVotes(result.finalVotes);
     emit({ type: "vote_result", votes: result.finalVotes, tally: result.finalTally });
+    return finish("done");
+  } catch (err) {
+    return finish("failed", errorMessage(err));
+  }
+}
+
+/**
+ * A 1-mot-1 debate: the two members speak in turn (each hears everything said before), an opening speech each and
+ * then the rebuttals, and the Speaker names the winner. Nothing is anonymous and nobody votes.
+ */
+async function runDuel(input: SessionInput, provider: ParlamentProvider): Promise<SessionResult> {
+  const emit = input.onEvent ?? (() => undefined);
+  const talman = input.talman ?? DEFAULT_TALMAN;
+  const rounds = Math.max(0, input.rounds ?? DEBATE_ROUNDS);
+  const usage: UsageRecord[] = [];
+  const result: SessionResult = {
+    state: "failed",
+    format: "duell",
+    mode: "chairman",
+    effectiveMode: "chairman",
+    rounds,
+    statements: [],
+    answers: [],
+    labels: {},
+    failedSeats: [],
+    rankings: [],
+    finalVotes: [],
+    usage,
+    totalCostUsd: 0,
+  };
+  const record = (u: UsageRecord[]) => {
+    usage.push(...u);
+    emit({ type: "cost", totalUsd: sumCost(usage) });
+  };
+  const finish = (state: "done" | "failed", error?: string): SessionResult => {
+    result.state = state;
+    result.error = error;
+    result.totalCostUsd = sumCost(usage);
+    emit({ type: "state", state });
+    return result;
+  };
+  const debaters = input.members;
+  if (debaters.length !== 2 || debaters[0]!.id === debaters[1]!.id) return finish("failed", "En debatt 1 mot 1 kräver två olika partiledare.");
+  const transcript = (): TranscriptEntry[] =>
+    result.statements.map((s) => {
+      const m = debaters.find((x) => x.id === s.seatId)!;
+      return { round: s.round, memberId: s.seatId, speaker: speakerName(m), text: s.text };
+    });
+
+  try {
+    for (let round = 0; round <= rounds; round++) {
+      emit({ type: "state", state: round === 0 ? "opening" : "debating" });
+      emit({ type: "round", round });
+      // One at a time: each speaker answers what the other just said.
+      for (const member of debaters) {
+        const opponent = debaters.find((d) => d !== member)!;
+        try {
+          const r = await provider.speak({
+            member,
+            opponent,
+            question: input.question,
+            brief: input.brief,
+            round,
+            totalRounds: rounds,
+            address: talman.address,
+            transcript: transcript(),
+            onText: (text) => emit({ type: "statement_delta", seatId: member.id, round, text }),
+            onStatus: (status) => {
+              emit({ type: "statement_status", seatId: member.id, round, status });
+              const notice = retryNotice(member.name, status);
+              if (notice) emit({ type: "notice", text: notice });
+            },
+          });
+          record(r.usage);
+          emit({ type: "statement_done", seatId: member.id, round });
+          result.statements.push({ seatId: member.id, round, text: r.value });
+        } catch (err) {
+          const error = errorMessage(err);
+          result.failedSeats.push({ seatId: member.id, stage: "speak", round, error });
+          emit({ type: "statement_failed", seatId: member.id, round, error });
+          return finish("failed", `${member.name} kunde inte tala, så debatten avbröts. Senaste fel: ${error}`);
+        }
+      }
+    }
+
+    emit({ type: "state", state: "judging" });
+    const judgment = await provider.judge({
+      talman,
+      question: input.question,
+      brief: input.brief,
+      debaters,
+      transcript: transcript(),
+      onText: (text) => emit({ type: "verdict_delta", text }),
+      onStatus: (status) => {
+        const notice = retryNotice(talman.name, status);
+        if (notice) emit({ type: "notice", text: notice });
+      },
+    });
+    record(judgment.usage);
+    result.verdict = judgment.value;
+    result.winnerSeatId = parseWinner(judgment.value, debaters);
+    emit({ type: "duel_result", winnerSeatId: result.winnerSeatId });
     return finish("done");
   } catch (err) {
     return finish("failed", errorMessage(err));

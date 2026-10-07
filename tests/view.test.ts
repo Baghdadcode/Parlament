@@ -41,7 +41,7 @@ describe("estimateSessionCost", () => {
 
 describe("live session reducer", () => {
   const seats = members.map(toMemberView);
-  const init = () => initialModel({ seats, talman: toMemberView(talman), mode: "full", rounds: 2, riksmote: "2026/27", number: 3, createdAt: null });
+  const init = () => initialModel({ format: "partiledardebatt", seats, talman: toMemberView(talman), mode: "full", rounds: 2, riksmote: "2026/27", number: 3, createdAt: null });
   it("accumulates streamed statements per round and marks them done or failed", () => {
     let m = init();
     m = reduce(m, { type: "statement_delta", seatId: "s", round: 0, text: "## För" });

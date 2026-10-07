@@ -11,16 +11,18 @@ export function Talarlista({
   rounds,
   currentKey,
   onSelect,
+  title = "Partiledardebatt",
 }: {
   items: Anforande[];
   rounds: number;
   currentKey: string | null;
   onSelect: (key: string) => void;
+  title?: string;
 }) {
   return (
     <nav aria-label="Talarlista" className="rounded-lg border border-zinc-200 bg-riks-paper dark:border-zinc-800 dark:bg-zinc-900">
       <h3 className="border-b border-zinc-200 px-3 py-2 font-serif text-sm font-semibold tracking-wide dark:border-zinc-800">
-        Talarlista <span className="font-sans text-xs font-normal text-zinc-500">· Partiledardebatt</span>
+        Talarlista <span className="font-sans text-xs font-normal text-zinc-500">· {title}</span>
       </h3>
       <div className="max-h-[34rem] overflow-y-auto px-1 pb-2">
         {Array.from({ length: rounds + 1 }, (_, round) => {

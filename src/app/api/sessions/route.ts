@@ -10,6 +10,9 @@ const schema = z.object({
   question: z.string().trim().min(3, "Ställ en fråga först").max(20_000),
   briefId: z.string().nullish(),
   mode: z.enum(["full", "chairman"]),
+  format: z.enum(["partiledardebatt", "duell"]).optional(),
+  /** For a "duell": the two member ids, the first speaker first. */
+  duel: z.array(z.string()).length(2).nullish(),
   rounds: z.number().int().min(0).max(4).optional(),
   /** Empty or missing: each member's own model. */
   model: z.string().max(100).nullish(),

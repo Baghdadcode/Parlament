@@ -6,6 +6,8 @@ where they answer each other by name and can change their proposal. They **rank 
 blind**, the **Speaker (Talmannen)** turns the winner into a proposed decision, and the chamber holds an **open
 vote (huvudvotering)**: every party votes ja, nej or avstår with its seats.
 
+Or pick **Debatt 1 mot 1**: two leaders of your choice debate face to face, and the Speaker decides who won.
+
 It looks and feels like the chamber:
 - **Chamber view:** a seating diagram (one dot per seat) with the Speaker's podium and the rostrum. The speaking
   party glows, and arrows show who replied to whom.
@@ -119,6 +121,22 @@ September.
 A member who fails a round is dropped from later rounds. At least 60% of the members (5 of 8) must remain. In
 **Talmannen avgör** mode there is no preliminary vote; the Speaker picks the best proposal directly, and the main
 vote still happens.
+
+### Debatt 1 mot 1
+
+Under **Debattform** on the ask page, choose **Debatt 1 mot 1** and pick two leaders: who opens (*Inleder*) and who
+answers (*Mot*). ⇄ swaps them.
+
+1. They speak one at a time, each hearing everything said so far: an opening speech each, then two replies each
+   (A, B, A, B, A, B). Every speech is one short paragraph, as in the party debate.
+2. **Talmannens avgörande (the Speaker's judgment):** the Speaker reads the whole debate and names the winner on the
+   first line ("Vinnare: …"), followed by a short `## Motivering` and each debater's strongest argument. It judges
+   who argued best: concrete arguments, how well each answered the other, and whether the proposal holds up, not
+   which party it prefers or which is bigger. A draw is not allowed.
+
+There is no vote and nothing is anonymous. The chamber view shows the two debaters face to face, and the winner gets a
+crown. If a debater fails to speak, the debate stops. A 1-mot-1 debate makes 7 API calls. The history list marks
+these sittings "1 mot 1".
 
 **Cost:** a question makes about 41 API calls. On Mistral's free plan that costs nothing. With 8 Claude Opus members
 the app estimates about $2 before you run it, and shows the real cost afterwards. Sonnet roughly halves that, and

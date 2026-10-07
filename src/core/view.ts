@@ -1,6 +1,6 @@
 // Plain, JSON-safe shapes shared by the server routes and the browser UI.
 import type { FinalVote, FinalVoteTally } from "./riksdag";
-import type { MemberDef, VotingMode } from "./types";
+import type { MemberDef, SessionFormat, VotingMode } from "./types";
 
 export interface MemberView {
   id: string;
@@ -64,9 +64,11 @@ export interface SessionSummaryView {
   riksmote: string;
   /** Sitting number within the riksmöte: "2026/27:14". */
   number: number;
+  format: SessionFormat;
   mode: VotingMode;
   rounds: number;
   state: string;
+  /** The winning proposal's member, or the 1-mot-1 winner the Speaker named. */
   winner: MemberView | null;
   closeRace: boolean | null;
   totalCostUsd: number;

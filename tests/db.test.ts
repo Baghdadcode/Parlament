@@ -82,4 +82,20 @@ describe("persistence", () => {
     expect(edited.content).toBe("y");
     expect(await listBriefs(db)).toHaveLength(2);
   });
+
+  it("stores a 1-mot-1 debate with its format, order, judgment and winner", async () => {
+    const db = await openDb(":memory:");
+    const pair = ["sd", "v"].map((id) => members.find((m) => m.id === id)!);
+    const result = await runSession({ question: "Q?", members: pair, talman, mode: "full", format: "duell" }, new FakeProvider({ duelWinner: "v" }));
+    await saveSession(db, { id: "duel", question: "Q?", members: pair, talman, riksmote: "2026/27", number: 15, result, createdAt: new Date() });
+    const d = (await getSessionDetail(db, "duel"))!;
+    expect(d.format).toBe("duell");
+    expect(d.mode).toBe("chairman");
+    expect(d.seats.map((x) => x.id)).toEqual(["sd", "v"]);
+    expect(d.statements.map((x) => `${x.round}:${x.seatId}`)).toEqual(["0:sd", "0:v", "1:sd", "1:v", "2:sd", "2:v"]);
+    expect(d.winner?.id).toBe("v");
+    expect(d.verdict).toMatch(/^Vinnare: Nooshi Dadgostar/);
+    expect(d.finalTally).toBeNull();
+    expect((await listSessions(db))[0]!.format).toBe("duell");
+  });
 });

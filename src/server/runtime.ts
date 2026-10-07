@@ -16,7 +16,7 @@ import { DEBATE_ROUNDS } from "../config/models";
 import { toMemberView, type MemberView } from "../core/view";
 import { riksmote as riksmoteOf } from "../core/riksdag";
 import { applyModel, assertUsable, type ProviderState, type ProviderStatus } from "../core/models";
-import type { ParlamentProvider, SessionBrief, VotingMode } from "../core/types";
+import type { MemberDef, ParlamentProvider, SessionBrief, SessionFormat, VotingMode } from "../core/types";
 
 export type StreamEvent =
   | SessionEvent
@@ -24,6 +24,7 @@ export type StreamEvent =
       type: "started";
       sessionId: string;
       question: string;
+      format: SessionFormat;
       mode: VotingMode;
       rounds: number;
       riksmote: string;
@@ -137,6 +138,10 @@ const runs = (): Map<string, LiveRun> => (state.runs ??= new Map());
 export interface StartInput {
   question: string;
   briefId?: string | null;
+  /** Default "partiledardebatt". */
+  format?: SessionFormat;
+  /** For a "duell": the two member ids, the first speaker first. */
+  duel?: string[] | null;
   mode: VotingMode;
   rounds?: number;
   /** One model for every member and the Speaker; empty keeps the model each member file names. */
@@ -146,8 +151,11 @@ export interface StartInput {
 /** Starts a debate in the background and returns its id; progress is delivered via subscribe(). */
 export async function startSession(input: StartInput): Promise<string> {
   const files = loadMembers();
-  const [talman, ...members] = applyModel([files.talman, ...files.members], input.model);
+  const format = input.format ?? "partiledardebatt";
+  const participants = format === "duell" ? pickDebaters(files.members, input.duel) : files.members;
+  const [talman, ...members] = applyModel([files.talman, ...participants], input.model);
   const loaded = { ...files, members, talman: talman! };
+  const mode: VotingMode = format === "duell" ? "chairman" : input.mode;
   assertUsable(await getKeyStatus(), [loaded.talman, ...loaded.members].map((m) => m.model));
   const db = await getDb();
   const briefView = input.briefId ? await getBrief(db, input.briefId) : null;
@@ -173,7 +181,8 @@ export async function startSession(input: StartInput): Promise<string> {
     type: "started",
     sessionId: id,
     question: input.question,
-    mode: input.mode,
+    format,
+    mode,
     rounds,
     riksmote,
     number,
@@ -189,9 +198,10 @@ export async function startSession(input: StartInput): Promise<string> {
         {
           question: input.question,
           brief: brief?.content,
+          format,
           members: loaded.members,
           talman: loaded.talman,
-          mode: input.mode,
+          mode,
           rounds,
           onEvent: push,
         },
@@ -218,6 +228,16 @@ export async function startSession(input: StartInput): Promise<string> {
     }
   })();
   return id;
+}
+
+/** The two debaters of a 1-mot-1 debate, in speaking order. */
+export function pickDebaters(members: MemberDef[], ids: string[] | null | undefined): MemberDef[] {
+  if (!ids || ids.length !== 2 || ids[0] === ids[1]) throw new Error("Välj två olika partiledare till debatten 1 mot 1.");
+  return ids.map((id) => {
+    const m = members.find((x) => x.id === id);
+    if (!m) throw new Error(`Okänd eller avstängd partiledare "${id}".`);
+    return m;
+  });
 }
 
 export function getLiveRun(id: string): { events: StreamEvent[]; finished: boolean } | null {

@@ -32,7 +32,7 @@ export interface MemberDef {
   file: string;
 }
 
-export type Stage = "opening" | "debate" | "rank" | "synthesize" | "vote";
+export type Stage = "opening" | "debate" | "rank" | "synthesize" | "vote" | "judge";
 
 export interface UsageRecord {
   stage: Stage;
@@ -64,6 +64,9 @@ export interface SessionBrief {
 /** "full": blind vote, then the Speaker writes the decision. "chairman": the Speaker decides without a vote. */
 export type VotingMode = "full" | "chairman";
 
+/** "partiledardebatt": every leader debates and the chamber votes. "duell": two leaders, and the Speaker names the winner. */
+export type SessionFormat = "partiledardebatt" | "duell";
+
 /** One statement already made in the debate, attributed by name (the debate itself is open). */
 export interface TranscriptEntry {
   round: number;
@@ -91,7 +94,21 @@ export interface SpeakRequest {
   totalRounds: number;
   /** How the Speaker is addressed, e.g. "Herr talman". */
   address?: string;
-  /** Everything said in earlier rounds; empty in the opening round. */
+  /** Everything said before this speech; empty for the very first one. */
+  transcript: TranscriptEntry[];
+  /** Set in a 1-mot-1 debate: the only other debater. */
+  opponent?: MemberDef;
+  onText?: (delta: string) => void;
+  onStatus?: (s: CallStatus) => void;
+}
+
+/** The Speaker decides who won a 1-mot-1 debate. */
+export interface JudgeRequest {
+  talman: MemberDef;
+  question: string;
+  brief?: string;
+  /** In speaking order: the first speaker, then the second. */
+  debaters: MemberDef[];
   transcript: TranscriptEntry[];
   onText?: (delta: string) => void;
   onStatus?: (s: CallStatus) => void;
@@ -165,9 +182,10 @@ export interface VoteOutput {
   explanation: string;
 }
 
-/** The four-method interface; other providers can be added without touching the orchestrator. */
+/** The provider interface; other providers can be added without touching the orchestrator. */
 export interface ParlamentProvider {
   speak(req: SpeakRequest): Promise<CallResult<string>>;
+  judge(req: JudgeRequest): Promise<CallResult<string>>;
   rank(req: RankRequest): Promise<CallResult<RankingOutput>>;
   synthesize(req: SynthesizeRequest): Promise<CallResult<string>>;
   vote(req: VoteRequest): Promise<CallResult<VoteOutput>>;

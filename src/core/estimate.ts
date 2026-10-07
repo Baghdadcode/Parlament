@@ -1,6 +1,6 @@
 import { PRICING } from "../config/models";
 import { billedPricing } from "./cost";
-import type { MemberDef, VotingMode } from "./types";
+import type { MemberDef, SessionFormat, VotingMode } from "./types";
 
 /**
  * Rough token counts per call (Opus 5.5, medium effort; output includes thinking). Estimates are rough by design;
@@ -19,12 +19,15 @@ const TYPICAL = {
   talman: { system: 900, output: 3_000, perReviewLine: 60 },
   /** Main vote: reads the Speaker's proposal and its own, answers with a short JSON. */
   vote: { decision: 1_000, output: 700 },
+  /** 1-mot-1: the Speaker reads the debate and names the winner. */
+  judge: { system: 700, output: 1_200 },
 } as const;
 
 export interface EstimateInput {
   members: Pick<MemberDef, "model">[];
   talman: Pick<MemberDef, "model">;
   mode: VotingMode;
+  format?: SessionFormat;
   rounds: number;
   briefChars?: number;
   questionChars?: number;
@@ -47,6 +50,17 @@ export function estimateSessionCost(input: EstimateInput): number {
   };
   const n = input.members.length;
   let usd = 0;
+  if (input.format === "duell") {
+    // Speeches one at a time, each reading everything said before it; then the Speaker's judgment.
+    let said = 0;
+    for (let round = 0; round <= input.rounds; round++) {
+      for (const m of input.members) {
+        usd += call(m.model, TYPICAL.system + questionTok, briefTok + said * TYPICAL.statement, round === 0 ? TYPICAL.opening.output : TYPICAL.rebuttal.output);
+        said++;
+      }
+    }
+    return usd + call(input.talman.model, TYPICAL.judge.system + questionTok, briefTok + said * TYPICAL.statement, TYPICAL.judge.output);
+  }
   for (let round = 0; round <= input.rounds; round++) {
     const transcript = round === 0 ? 0 : n * TYPICAL.statement * round;
     const out = round === 0 ? TYPICAL.opening.output : TYPICAL.rebuttal.output;

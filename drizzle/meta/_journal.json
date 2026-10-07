@@ -15,6 +15,13 @@
       "when": 1791320969644,
       "tag": "0001_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791400599959,
+      "tag": "0002_duel",
+      "breakpoints": true
     }
   ]
 }

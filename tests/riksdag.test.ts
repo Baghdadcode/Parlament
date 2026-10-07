@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   annotateLabels,
+  judgmentBody,
+  parseWinner,
   beslutPoints,
   mentions,
   parseDecision,
@@ -131,5 +133,26 @@ describe("chamber diagram", () => {
   it("draws a fixed number of seats per party when no seats are set", () => {
     const parties = chamberSeats(members.slice(0, 3).map((m) => ({ ...toMemberView(m), seats: 0 })));
     expect(parties.every((p) => p.seats.length === 15)).toBe(true);
+  });
+});
+
+describe("parseWinner", () => {
+  const debaters = [
+    { id: "m", name: "Ulf Kristersson", short: "M" },
+    { id: "s", name: "Magdalena Andersson", short: "S" },
+  ];
+  it("reads the Vinnare line by full name, surname or party", () => {
+    expect(parseWinner("Vinnare: Magdalena Andersson\n\n## Motivering\nUlf Kristersson …", debaters)).toBe("s");
+    expect(parseWinner("**Vinnare:** Kristersson (M)", debaters)).toBe("m");
+    expect(parseWinner("## Vinnare: (S)", debaters)).toBe("s");
+    expect(parseWinner("Vinnare – Anderssons linje", debaters)).toBe("s");
+  });
+  it("takes whoever is named first, and gives null without a usable line", () => {
+    expect(parseWinner("Vinnare: Ulf Kristersson, före Magdalena Andersson", debaters)).toBe("m");
+    expect(parseWinner("Ulf Kristersson vann.", debaters)).toBeNull();
+    expect(parseWinner("Vinnare: oavgjort", debaters)).toBeNull();
+  });
+  it("leaves the rest of the judgment for the page", () => {
+    expect(judgmentBody("Vinnare: Ulf Kristersson\n\n## Motivering\nTydligast.")).toBe("## Motivering\nTydligast.");
   });
 });

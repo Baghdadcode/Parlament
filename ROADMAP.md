@@ -78,10 +78,12 @@ Drizzle on `node:sqlite`.
       the record's style; chamber diagram with replik arrows; talarlista with speaking time; rostrum with name tags
       and a live badge; voting board for the open main vote; Riksdagsbeslut document with party reservations;
       printable Protokoll; navy, gold and serif theme with dark mode; gavel and chime sounds
+- [x] Debatt 1 mot 1: two chosen leaders speak in turn (each hears the other), and the Speaker names the winner
+      ("Vinnare: …" line, parsed by name, surname or party); stored with `sessions.format = "duell"`
 
 ## Ideas (not started)
 
-- [ ] Debate formats: interpellationsdebatt, utskottsbehandling (committee stage), frågestund, statsministerns frågestund
+- [ ] More debate formats: interpellationsdebatt, utskottsbehandling (committee stage), frågestund, statsministerns frågestund
 - [ ] Per-question round picker and a "only these parties" selector
 - [ ] Follow-up questions that continue an earlier debate
 - [ ] Edit member files from the browser

@@ -1,5 +1,6 @@
 import type {
   CallResult,
+  JudgeRequest,
   ParlamentProvider,
   RankRequest,
   RankingOutput,
@@ -27,6 +28,8 @@ export interface FakeProviderOptions {
   /** Member id -> main-vote choice. Default: ja, except a demo split (V and SD nej, MP avstår). */
   votes?: Record<string, VoteChoice>;
   failVoteFor?: string[];
+  /** Member id of the 1-mot-1 winner. Default: the first speaker. */
+  duelWinner?: string;
   /** Milliseconds between streamed chunks, to exercise live UIs. 0 (default) streams instantly. */
   chunkDelayMs?: number;
 }
@@ -35,12 +38,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Deterministic provider for tests and offline mode; never touches the network. */
 export class FakeProvider implements ParlamentProvider {
-  readonly calls = { speak: 0, rank: 0, synthesize: 0, vote: 0 };
-  readonly seen: { rank: RankRequest[]; synthesize: SynthesizeRequest[]; speak: SpeakRequest[]; vote: VoteRequest[] } = {
+  readonly calls = { speak: 0, rank: 0, synthesize: 0, vote: 0, judge: 0 };
+  readonly seen: { rank: RankRequest[]; synthesize: SynthesizeRequest[]; speak: SpeakRequest[]; vote: VoteRequest[]; judge: JudgeRequest[] } = {
     rank: [],
     synthesize: [],
     speak: [],
     vote: [],
+    judge: [],
   };
   constructor(private readonly opts: FakeProviderOptions = {}) {}
 
@@ -120,6 +124,25 @@ export class FakeProvider implements ParlamentProvider {
     ].join("\n");
     await this.stream(text, req.onText);
     return { value: text, usage: usage("synthesize", req.talman.id, req.talman.model) };
+  }
+
+  async judge(req: JudgeRequest): Promise<CallResult<string>> {
+    this.calls.judge++;
+    this.seen.judge.push(req);
+    const winner = req.debaters.find((d) => d.id === this.opts.duelWinner) ?? req.debaters[0]!;
+    const loser = req.debaters.find((d) => d !== winner) ?? winner;
+    const text = [
+      `Vinnare: ${winner.name}`,
+      "",
+      "## Motivering",
+      `${winner.name} var mer konkret och bemötte motståndarens invändningar direkt, medan ${loser.name} fastnade i allmänna formuleringar.`,
+      "",
+      "## Starkaste argument",
+      `- ${winner.name}: reformen är finansierad och följs upp årligen.`,
+      `- ${loser.name}: kostnaderna kan bli högre än väntat.`,
+    ].join("\n");
+    await this.stream(text, req.onText);
+    return { value: text, usage: usage("judge", req.talman.id, req.talman.model) };
   }
 
   async vote(req: VoteRequest): Promise<CallResult<VoteOutput>> {

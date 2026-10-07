@@ -5,7 +5,7 @@ import { modelLabel } from "../config/models";
 import { Markdown } from "./Markdown";
 import { PartyBadge } from "./PartyChip";
 import { roundLabel } from "./format";
-import { droppedIn, type SessionModel } from "./model";
+import { droppedIn, winnerOf, type SessionModel } from "./model";
 
 /** The debate round by round: a tab per round, a party-coloured card per member. Follows the live round. */
 export function DebateRounds({ model }: { model: SessionModel }) {
@@ -15,7 +15,7 @@ export function DebateRounds({ model }: { model: SessionModel }) {
   const shown = picked ?? model.round;
   const rounds = Array.from({ length: model.rounds + 1 }, (_, i) => i);
   const labelOf = new Map(model.labels.map((l) => [l.seatId, l.label]));
-  const winner = model.tally?.winnerSeatId;
+  const winner = winnerOf(model);
   const isFinal = shown === model.rounds;
   const roundDone = shown < model.round || (shown === model.round && model.stage !== "opening" && model.stage !== "debating");
 

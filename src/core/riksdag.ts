@@ -178,3 +178,26 @@ export function tallyVotes(votes: Pick<FinalVote, "choice" | "weight">[]): Final
   const voted = t.ja + t.nej + t.avstar;
   return { ...t, passed: voted === 0 ? null : t.ja > t.nej };
 }
+
+/**
+ * Who the Speaker named in the "Vinnare: …" line of a 1-mot-1 judgment (full name or surname, also in the genitive, or "(S)"). When the line
+ * names both, the one named first wins; null when there is no such line or it names neither.
+ */
+export function parseWinner(text: string, debaters: Pick<MemberDef, "id" | "name" | "short">[]): string | null {
+  const line = /^[\s*_#>-]*Vinnare[\s*_]*[:–—-]\s*(.+)$/im.exec(text)?.[1];
+  if (!line) return null;
+  let best: { id: string; at: number } | null = null;
+  for (const d of debaters) {
+    const parts = d.name.trim().split(/\s+/);
+    const names = [d.name, ...(parts.length > 1 && parts.at(-1)!.length > 2 ? [parts.at(-1)!] : [])];
+    const re = new RegExp(`(?<![${L}])(?:${names.map(escapeRe).join("|")})s?(?![${L}])|\\(${escapeRe(d.short)}\\)`, "iu");
+    const at = re.exec(line)?.index;
+    if (at !== undefined && (!best || at < best.at)) best = { id: d.id, at };
+  }
+  return best?.id ?? null;
+}
+
+/** The Speaker's judgment without its "Vinnare: …" line, which the page shows as a banner instead. */
+export function judgmentBody(text: string): string {
+  return text.replace(/^[\s*_#>-]*Vinnare[\s*_]*[:–—-].*$/im, "").trim();
+}

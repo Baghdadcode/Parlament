@@ -79,6 +79,7 @@ export async function saveSession(
         briefId: brief?.id ?? null,
         briefContent: brief?.content ?? null,
         briefUpdatedAt: brief?.updatedAt ?? null,
+        format: result.format,
         mode: result.mode,
         effectiveMode: result.effectiveMode,
         state: result.state,

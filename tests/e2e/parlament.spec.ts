@@ -109,3 +109,36 @@ test("background editor creates and edits a background", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByLabel("Bakgrund").locator("option", { hasText: `Elmarknaden ${run}` })).toHaveCount(1);
 });
+
+test("a 1-mot-1 debate: two leaders take turns and the Speaker names the winner", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Din fråga till riksdagen").fill(`Ny kärnkraft? (${run})`);
+  await page.getByLabel(/Debatt 1 mot 1/).check();
+  await expect(page.getByText("Förberedande votering", { exact: true })).toHaveCount(0);
+  await page.getByRole("combobox", { name: /Inleder/ }).selectOption({ label: "Ulf Kristersson (M)" });
+  await page.getByRole("combobox", { name: /^Mot/ }).selectOption({ label: "Ulf Kristersson (M)" });
+  await expect(page.getByText("Välj två olika partiledare.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Fråga riksdagen" })).toBeDisabled();
+  await page.getByRole("combobox", { name: /^Mot/ }).selectOption({ label: "Nooshi Dadgostar (V)" });
+  await page.getByRole("button", { name: "Fråga riksdagen" }).click();
+
+  await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 30_000 });
+  await expect(page.getByText(/§ 1 Debatt 1 mot 1: Ulf Kristersson \(M\) mot Nooshi Dadgostar \(V\)/)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Debatt 1 mot 1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ulf Kristersson vann debatten" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("TALMANNENS AVGÖRANDE", { exact: true })).toBeVisible();
+  await expect(page.getByText("VINNARE", { exact: true })).toBeVisible();
+  await expect(page.getByText(/anrop · cacheläsningar/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("Huvudvotering")).toHaveCount(0);
+
+  // Six speeches, alternating.
+  const list = page.getByRole("navigation", { name: "Talarlista" });
+  await expect(list.getByRole("button")).toHaveCount(6);
+  await expect(list.getByRole("button").nth(1)).toContainText("Nooshi Dadgostar");
+
+  await page.getByRole("tab", { name: "Protokoll" }).click();
+  await expect(page.getByText("Talmannen förklarade Ulf Kristersson (M) som vinnare av debatten.")).toBeVisible();
+
+  await page.getByRole("link", { name: "Protokoll", exact: true }).click();
+  await expect(page.getByRole("row", { name: new RegExp(run) }).filter({ hasText: "Ny kärnkraft" }).getByText("1 mot 1")).toBeVisible();
+});

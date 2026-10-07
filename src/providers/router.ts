@@ -1,6 +1,7 @@
 import { providerOf, type ProviderId } from "../config/models";
 import type {
   CallResult,
+  JudgeRequest,
   MemberDef,
   ParlamentProvider,
   RankRequest,
@@ -42,6 +43,10 @@ export class RouterProvider implements ParlamentProvider {
 
   synthesize(req: SynthesizeRequest): Promise<CallResult<string>> {
     return this.for(req.talman).synthesize(req);
+  }
+
+  judge(req: JudgeRequest): Promise<CallResult<string>> {
+    return this.for(req.talman).judge(req);
   }
 
   vote(req: VoteRequest): Promise<CallResult<VoteOutput>> {

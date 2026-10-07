@@ -1,8 +1,9 @@
-import type { LabeledAnswer, MemberDef, ReviewItem, SynthesizeRequest, TranscriptEntry, VoteRequest } from "../core/types";
+import type { JudgeRequest, LabeledAnswer, MemberDef, ReviewItem, SynthesizeRequest, TranscriptEntry, VoteRequest } from "../core/types";
 
 export const OPENING_WORD_CAP = 90;
 export const REBUTTAL_WORD_CAP = 70;
 export const BESLUT_WORD_CAP = 700;
+export const JUDGMENT_WORD_CAP = 120;
 
 /** Shared, cacheable block. Identical bytes for every call in a session so the prefix cache can hit. */
 export function briefBlock(brief: string): string {
@@ -49,27 +50,27 @@ function chamberManners(address: string): string {
   ].join("\n");
 }
 
-export function memberSystem(member: MemberDef, round: number, totalRounds: number, address = "Herr talman"): string {
-  const common = [
-    personaBlock(member),
-    "",
-    chamberManners(address),
-    "",
-    "## Debattens gång",
-    `Frågan debatteras i en partiledardebatt: en runda anföranden och ${totalRounds} replikskifte${totalRounds === 1 ? "" : "n"}. Därefter rangordnar partiledarna varandras slutliga förslag anonymt i en förberedande votering, talmannen skriver ett förslag till riksdagsbeslut, och kammaren röstar ja eller nej om det i huvudvoteringen.`,
-    "Det förslag som övertygar flest vinner. Det är alltså konkreta, genomförbara och väl underbyggda förslag som vinner röster, inte partiretorik. Du får ändra dig när ett argument är bättre, men bara så långt din persona rimligen skulle göra det.",
-    "",
-  ];
+export function memberSystem(member: MemberDef, round: number, totalRounds: number, address = "Herr talman", opponent?: MemberDef): string {
+  const flow = opponent
+    ? [
+        "## Debattens gång",
+        `Det här är en debatt 1 mot 1 mellan dig och ${speakerLabel(opponent)}. Ni talar växelvis: ett anförande var och sedan ${totalRounds} replik${totalRounds === 1 ? "" : "er"} var. Därefter avgör talmannen vem som vann debatten.`,
+        `Talmannen dömer opartiskt efter vem som argumenterade bäst: sakliga och konkreta argument, hur väl man bemötte motståndarens poänger och om förslaget håller. Partiretorik och personangrepp vinner inga poäng.`,
+        "",
+      ]
+    : [
+        "## Debattens gång",
+        `Frågan debatteras i en partiledardebatt: en runda anföranden och ${totalRounds} replikskifte${totalRounds === 1 ? "" : "n"}. Därefter rangordnar partiledarna varandras slutliga förslag anonymt i en förberedande votering, talmannen skriver ett förslag till riksdagsbeslut, och kammaren röstar ja eller nej om det i huvudvoteringen.`,
+        "Det förslag som övertygar flest vinner. Det är alltså konkreta, genomförbara och väl underbyggda förslag som vinner röster, inte partiretorik. Du får ändra dig när ett argument är bättre, men bara så långt din persona rimligen skulle göra det.",
+        "",
+      ];
+  const common = [personaBlock(member), "", chamberManners(address), "", ...flow];
+  if (opponent) return duelTask(common, opponent, round, totalRounds);
   const last = round === totalRounds;
   const finalNote = last
     ? "Detta är den sista rundan: det här inlägget är det som går till votering. Avsluta med en mening som säger exakt vad du föreslår, och nämn inte ditt eget namn eller parti, eftersom omröstningen är anonym."
     : "";
-  const form = [
-    "## Form",
-    `- Ett enda kort stycke löptext, högst ${round === 0 ? OPENING_WORD_CAP : REBUTTAL_WORD_CAP} ord. Det är en hård gräns: hellre kortare.`,
-    "- Inga rubriker, inga punktlistor, ingen fetstil. Bara talad text, som när man står i talarstolen.",
-    "- Skriv på svenska, i första person, i din egen ton.",
-  ];
+  const form = speechForm(round === 0 ? OPENING_WORD_CAP : REBUTTAL_WORD_CAP);
 
   if (round === 0) {
     return [
@@ -93,6 +94,55 @@ export function memberSystem(member: MemberDef, round: number, totalRounds: numb
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+const speakerLabel = (m: Pick<MemberDef, "name" | "short">) => `${m.name} (${m.short})`;
+
+function speechForm(cap: number): string[] {
+  return [
+    "## Form",
+    `- Ett enda kort stycke löptext, högst ${cap} ord. Det är en hård gräns: hellre kortare.`,
+    "- Inga rubriker, inga punktlistor, ingen fetstil. Bara talad text, som när man står i talarstolen.",
+    "- Skriv på svenska, i första person, i din egen ton.",
+  ];
+}
+
+function duelTask(common: string[], opponent: MemberDef, round: number, totalRounds: number): string {
+  const task =
+    round === 0
+      ? [
+          "## Din uppgift nu: anförande",
+          `Säg ditt konkreta svar på frågan och varför, kort och slagkraftigt. Har ${opponent.name} redan talat (se <debatt>-blocket) får du bemöta det direkt.`,
+        ]
+      : [
+          `## Din uppgift nu: replik ${round} av ${totalRounds}`,
+          `Du har läst debatten hittills i <debatt>-blocket. Bemöt det ${opponent.name} senast sa, konkret, och försvara eller skärp din egen linje.`,
+          ...(round === totalRounds ? ["Det här är din sista replik: avsluta med en mening som sammanfattar varför ditt förslag är bättre."] : []),
+        ];
+  return [...common, ...task, ...speechForm(round === 0 ? OPENING_WORD_CAP : REBUTTAL_WORD_CAP)].join("\n");
+}
+
+export function judgeSystem(talman: MemberDef, debaters: MemberDef[]): string {
+  const names = debaters.map(speakerLabel).join(" och ");
+  return [
+    `Du är ${talman.name}.`,
+    "",
+    "## Din persona",
+    talman.persona,
+    "",
+    "## Din uppgift: avgör debatten",
+    `${names} har debatterat frågan 1 mot 1. Debatten finns i <debatt>-blocket. Du ska avgöra vem som vann.`,
+    "Döm opartiskt. Det handlar inte om vilken politik du föredrar eller vilket parti som är störst, utan om vem som argumenterade bäst: sakliga och konkreta argument, hur väl debattören bemötte motståndarens poänger, och om förslaget går att genomföra. Det får inte bli oavgjort; välj den som var bäst, även om det var jämnt.",
+    "",
+    "## Format",
+    `- Första raden: "Vinnare: <fullständigt namn>", med namnet exakt som det står här: ${debaters.map((d) => d.name).join(" eller ")}.`,
+    `- ## Motivering: ett kort stycke, högst ${JUDGMENT_WORD_CAP} ord, om varför vinnaren tog debatten och vad som avgjorde.`,
+    "- ## Starkaste argument: en punkt per debattör, i formen \"- <namn>: <deras starkaste argument i en mening>\".",
+  ].join("\n");
+}
+
+export function judgeUser(req: Pick<JudgeRequest, "question" | "debaters">): string {
+  return `Fråga till riksdagen:\n\n${req.question.trim()}\n\nDebattörer, i talarordning: ${req.debaters.map(speakerLabel).join(", ")}.`;
 }
 
 export function speakUser(question: string): string {

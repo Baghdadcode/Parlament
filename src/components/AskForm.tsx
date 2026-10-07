@@ -6,7 +6,8 @@ import Link from "next/link";
 import { date, usd } from "./format";
 import type { BriefView, MemberView } from "../core/view";
 import type { ModelChoices } from "../core/models";
-import type { VotingMode } from "../core/types";
+import type { SessionFormat, VotingMode } from "../core/types";
+import { PartyBadge } from "./PartyChip";
 
 export function AskForm({
   members,
@@ -25,6 +26,12 @@ export function AskForm({
   const [question, setQuestion] = useState("");
   const [briefId, setBriefId] = useState<string>("");
   const [mode, setMode] = useState<VotingMode>("full");
+  const [format, setFormat] = useState<SessionFormat>("partiledardebatt");
+  const [first, setFirst] = useState(members[0]?.id ?? "");
+  const [second, setSecond] = useState(members[1]?.id ?? "");
+  const duel = format === "duell";
+  const duelIds = duel ? [first, second] : null;
+  const duelOk = !duel || (!!first && !!second && first !== second);
   const [model, setModel] = useState<string>(models.defaultValue);
   const allModels = models.groups.flatMap((g) => g.options);
   const selectedModel = allModels.find((o) => o.value === model);
@@ -40,7 +47,7 @@ export function AskForm({
         const res = await fetch("/api/estimate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ briefId: briefId || null, mode, question, model: model || null }),
+          body: JSON.stringify({ briefId: briefId || null, mode, question, model: model || null, format, duel: format === "duell" ? [first, second] : null }),
         });
         setEstimate(res.ok ? ((await res.json()) as { usd: number }).usd : null);
       } catch {
@@ -48,7 +55,7 @@ export function AskForm({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [briefId, mode, question, model]);
+  }, [briefId, mode, question, model, format, first, second]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,7 +65,7 @@ export function AskForm({
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, briefId: briefId || null, mode, model: model || null }),
+        body: JSON.stringify({ question, briefId: briefId || null, mode, model: model || null, format, duel: duelIds }),
       });
       const body = (await res.json()) as { id?: string; error?: string };
       if (!res.ok || !body.id) throw new Error(body.error ?? `Förfrågan misslyckades (${res.status})`);
@@ -69,7 +76,8 @@ export function AskForm({
     }
   }
 
-  const canRun = canRunAtAll && !!selectedModel?.available && question.trim().length >= 3 && !submitting;
+  const canRun = canRunAtAll && !!selectedModel?.available && duelOk && question.trim().length >= 3 && !submitting;
+  const byId = new Map(members.map((m) => [m.id, m]));
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -91,8 +99,76 @@ export function AskForm({
         />
       </div>
 
+      <fieldset>
+        <legend className="mb-1 block text-sm font-medium">Debattform</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              ["partiledardebatt", "Partiledardebatt", `Alla ${members.length} partiledare debatterar; kammaren röstar om talmannens förslag`],
+              ["duell", "Debatt 1 mot 1", "Två partiledare möts; talmannen avgör vem som vann"],
+            ] as const
+          ).map(([value, label, hint]) => (
+            <label
+              key={value}
+              className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm ${
+                format === value ? "border-riks-gold bg-riks-gold-soft/20 dark:bg-riks-gold/10" : "border-zinc-300 dark:border-zinc-700"
+              }`}
+            >
+              <input type="radio" name="format" checked={format === value} onChange={() => setFormat(value)} className="mt-1" />
+              <span>
+                {label} <span className="block text-xs text-zinc-500">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {duel && (
+        <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto_1fr]">
+          {(
+            [
+              ["first", "Inleder", first, setFirst],
+              ["second", "Mot", second, setSecond],
+            ] as const
+          ).map(([key, label, value, set], i) => (
+            <div key={key} className={i === 1 ? "sm:order-3" : ""}>
+              <label htmlFor={`duel-${key}`} className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+                {label} {byId.get(value) && <PartyBadge member={byId.get(value)!} />}
+              </label>
+              <select
+                id={`duel-${key}`}
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                className="w-full rounded-lg border border-zinc-300 bg-transparent p-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.short})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setFirst(second);
+              setSecond(first);
+            }}
+            title="Byt vem som inleder"
+            className="rounded-md border border-zinc-300 px-2 py-2 text-xs text-zinc-600 hover:bg-zinc-50 sm:order-2 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            ⇄ Byt
+          </button>
+          {!duelOk && <p className="text-xs text-red-600 sm:order-4 sm:col-span-3">Välj två olika partiledare.</p>}
+        </div>
+      )}
+
       <p className="text-xs text-zinc-500">
-        Partiledardebatt med {members.length} partiledare: anföranden och {rounds} replikskiften, sedan votering och talmannens beslut. Ändra
+        {duel
+          ? `Debatt 1 mot 1: ett anförande och ${rounds} repliker var, växelvis, sedan avgör talmannen vem som argumenterade bäst.`
+          : `Partiledardebatt med ${members.length} partiledare: anföranden och ${rounds} replikskiften, sedan votering och talmannens beslut.`}{" "}
+        Ändra
         personligheterna i <code>members/*.md</code>; ändringarna gäller från nästa fråga.{" "}
         <Link href="/ledamoter" className="text-riks-navy underline dark:text-riks-gold-soft">
           Visa ledamöter
@@ -155,6 +231,7 @@ export function AskForm({
           </p>
         </div>
 
+        {!duel && (
         <fieldset>
           <legend className="mb-1 block text-sm font-medium">Beslutsordning</legend>
           <div className="space-y-1 text-sm">
@@ -174,6 +251,7 @@ export function AskForm({
           </div>
           <p className="mt-1 text-xs text-zinc-500">Båda avslutas med huvudvotering: ja, nej eller avstår, med partiernas mandat.</p>
         </fieldset>
+        )}
       </div>
 
       {error && (

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TALMAN, loadMembers, MemberFileError, parseFrontmatter, parseMemberFile } from "../src/members/load";
+import { judgeSystem, memberSystem } from "../src/members/prompts";
 
 const file = (fm: string, body = "## Vem du är\nEn testperson.") => `---\n${fm}\n---\n${body}\n`;
 const valid = (id: string, short: string, extra = "") =>
@@ -102,5 +103,24 @@ describe("loadMembers", () => {
         }),
       ),
     ).toThrow(/talman/);
+  });
+});
+
+describe("1-mot-1 prompts", () => {
+  const { members: all, talman } = loadMembers("members");
+  const [a, b] = [all[0]!, all[2]!];
+  it("tells each debater who they face and asks for one short paragraph", () => {
+    const sys = memberSystem(a, 1, 2, "Herr talman", b);
+    expect(sys).toContain(`debatt 1 mot 1 mellan dig och ${b.name} (${b.short})`);
+    expect(sys).toContain("replik 1 av 2");
+    expect(sys).toContain("högst 70 ord");
+    expect(sys).not.toContain("votering");
+    expect(memberSystem(a, 2, 2, "Herr talman", b)).toContain("sista replik");
+  });
+  it("asks the Speaker for a winner by name, never a draw", () => {
+    const sys = judgeSystem(talman, [a, b]);
+    expect(sys).toContain(`"Vinnare: <fullständigt namn>"`);
+    expect(sys).toContain(`${a.name} eller ${b.name}`);
+    expect(sys).toContain("inte bli oavgjort");
   });
 });

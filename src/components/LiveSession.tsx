@@ -7,11 +7,11 @@ import { initialModel, reduce, type SessionMeta } from "./model";
 import { chime, gavel } from "./sound";
 import type { StreamEvent } from "../server/runtime";
 
-/** Sounds of the sitting: the gavel opens each round and closes the vote; a chime calls the chamber to vote. */
+/** Sounds of the sitting: the gavel opens each round and closes the vote or the judgment; a chime opens them. */
 function playFor(e: StreamEvent): void {
   if (e.type === "round") gavel();
-  else if (e.type === "state" && (e.state === "ranking" || e.state === "voting")) chime();
-  else if (e.type === "vote_result") gavel();
+  else if (e.type === "state" && (e.state === "ranking" || e.state === "voting" || e.state === "judging")) chime();
+  else if (e.type === "vote_result" || e.type === "duel_result") gavel();
 }
 
 /** Streams a running sitting over server-sent events, then hands over to the saved version. */

@@ -33,7 +33,7 @@ export default async function History() {
                 <th className="px-4 py-2 font-medium">Nr</th>
                 <th className="px-2 py-2 font-medium">Fråga</th>
                 <th className="px-2 py-2 font-medium">När</th>
-                <th className="px-2 py-2 font-medium">Vinnande förslag</th>
+                <th className="px-2 py-2 font-medium">Vinnare</th>
                 <th className="px-2 py-2 font-medium">Huvudvotering</th>
                 <th className="px-4 py-2 text-right font-medium">Kostnad</th>
               </tr>
@@ -46,6 +46,9 @@ export default async function History() {
                     <Link href={`/sessions/${s.id}`} className="line-clamp-2 hover:underline">
                       {s.question}
                     </Link>
+                    {s.format === "duell" && (
+                      <span className="mr-1 rounded bg-zinc-100 px-1.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">1 mot 1</span>
+                    )}
                     {s.state !== "done" && <span className="text-xs text-red-600">avbrutet</span>}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-zinc-500">{dateTime(s.createdAt)}</td>

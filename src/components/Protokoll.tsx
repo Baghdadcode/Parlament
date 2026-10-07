@@ -1,6 +1,6 @@
 "use client";
 
-import { mentions, sittingDate, sittingTime } from "../core/riksdag";
+import { judgmentBody, mentions, sittingDate, sittingTime } from "../core/riksdag";
 import { Markdown } from "./Markdown";
 import { anforanden, type SessionModel } from "./model";
 import { Riksdagsbeslut } from "./Riksdagsbeslut";
@@ -14,6 +14,8 @@ export function Protokoll({ model, question, briefName }: { model: SessionModel;
   const byId = new Map(model.seats.map((s) => [s.id, s]));
   const labelOf = new Map(model.labels.map((l) => [l.seatId, l.label]));
   const parties = [...model.seats].sort((a, b) => a.placement - b.placement);
+  const duel = model.format === "duell";
+  const winner = model.seats.find((s) => s.id === model.winnerSeatId);
   let paragraph = 0;
   const p = () => `§ ${++paragraph}`;
 
@@ -43,9 +45,11 @@ export function Protokoll({ model, question, briefName }: { model: SessionModel;
         </header>
 
         <section className="relative mt-8 space-y-1">
-          <h3 className="font-semibold">{p()} Partiledardebatt</h3>
+          <h3 className="font-semibold">{p()} {duel ? "Debatt 1 mot 1" : "Partiledardebatt"}</h3>
           <p>
-            Talmannen meddelade att partiledardebatt skulle hållas med anledning av följande fråga:
+            {duel
+              ? `Talmannen meddelade att en debatt mellan ${model.seats.map((s) => `${s.name} (${s.short})`).join(" och ")} skulle hållas med anledning av följande fråga:`
+              : "Talmannen meddelade att partiledardebatt skulle hållas med anledning av följande fråga:"}
           </p>
           <blockquote className="border-l-2 border-riks-gold pl-4 italic">{question}</blockquote>
           {briefName && <p className="text-sm text-zinc-600 dark:text-zinc-400">Underlag: {briefName}.</p>}
@@ -102,7 +106,17 @@ export function Protokoll({ model, question, briefName }: { model: SessionModel;
           </section>
         )}
 
-        {model.verdict && (
+        {duel && model.verdict && (
+          <section className="relative mt-8 break-inside-avoid-page">
+            <h3 className="font-semibold">{p()} Talmannens avgörande</h3>
+            <p className="mt-1 font-semibold">
+              {winner ? `Talmannen förklarade ${winner.name} (${winner.short}) som vinnare av debatten.` : "Talmannen utsåg ingen vinnare."}
+            </p>
+            <Markdown text={judgmentBody(model.verdict)} variant="protocol" className="mt-2 font-serif text-[15px]" />
+          </section>
+        )}
+
+        {!duel && model.verdict && (
           <section className="relative mt-8">
             <h3 className="mb-3 font-semibold">{p()} Talmannens förslag till beslut</h3>
             <Riksdagsbeslut model={model} question={question} />

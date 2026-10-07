@@ -21,6 +21,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     <LiveSession
       id={id}
       meta={{
+        format: started.format,
         seats: started.seats,
         talman: started.talman,
         mode: started.mode,

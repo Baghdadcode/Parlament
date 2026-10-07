@@ -5,6 +5,7 @@ import { RANKING_JSON_SCHEMA, VOTE_JSON_SCHEMA, parseRanking, parseVote } from "
 import type {
   CallResult,
   CallStatus,
+  JudgeRequest,
   MemberDef,
   ParlamentProvider,
   RankRequest,
@@ -17,6 +18,8 @@ import type {
 } from "../core/types";
 import {
   briefBlock,
+  judgeSystem,
+  judgeUser,
   memberSystem,
   rankSystem,
   rankUser,
@@ -126,7 +129,7 @@ export function describeError(err: unknown): string {
 
 const briefCache = (brief?: string): string[] => (brief ? [briefBlock(brief)] : []);
 
-/** The four steps of a sitting as provider-neutral calls. */
+/** The steps of a sitting as provider-neutral calls. */
 export const requests = {
   speak(req: SpeakRequest): CallOptions {
     const cached = briefCache(req.brief);
@@ -136,7 +139,7 @@ export const requests = {
       advisorId: req.member.id,
       round: req.round,
       seat: req.member,
-      system: memberSystem(req.member, req.round, req.totalRounds, req.address),
+      system: memberSystem(req.member, req.round, req.totalRounds, req.address, req.opponent),
       cached,
       user: speakUser(req.question),
       maxTokens: 16_000,
@@ -172,6 +175,22 @@ export const requests = {
       onStatus: req.onStatus,
     };
   },
+  judge(req: JudgeRequest): CallOptions {
+    const cached = briefCache(req.brief);
+    cached.push(transcriptBlock(req.transcript));
+    return {
+      stage: "judge",
+      advisorId: req.talman.id,
+      round: null,
+      seat: req.talman,
+      system: judgeSystem(req.talman, req.debaters),
+      cached,
+      user: judgeUser(req),
+      maxTokens: 16_000,
+      onText: req.onText,
+      onStatus: req.onStatus,
+    };
+  },
   vote(req: VoteRequest): CallOptions {
     return {
       stage: "vote",
@@ -191,7 +210,7 @@ export const requests = {
 /** JSON output can arrive wrapped in a markdown code fence; strip it before parsing. */
 export const unfence = (text: string) => text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1");
 
-/** A provider only has to make one call; the four steps are built here, the same way for every model. */
+/** A provider only has to make one call; the steps are built here, the same way for every model. */
 export abstract class CallProvider implements ParlamentProvider {
   protected abstract call<T>(opts: CallOptions, parse: (text: string) => T): Promise<CallResult<T>>;
 
@@ -206,6 +225,10 @@ export abstract class CallProvider implements ParlamentProvider {
 
   synthesize(req: SynthesizeRequest): Promise<CallResult<string>> {
     return this.call(requests.synthesize(req), (text) => text);
+  }
+
+  judge(req: JudgeRequest): Promise<CallResult<string>> {
+    return this.call(requests.judge(req), (text) => text);
   }
 
   vote(req: VoteRequest): Promise<CallResult<VoteOutput>> {

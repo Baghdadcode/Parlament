@@ -20,7 +20,7 @@ describe("runSession (fake provider)", () => {
     expect(states).toEqual(["opening", "debating", "ranking", "counting", "synthesizing", "voting", "done"]);
     expect(rounds).toEqual([0, 1, 2]);
     expect(r.state).toBe("done");
-    expect(p.calls).toEqual({ speak: 8 * 3, rank: 8, synthesize: 1, vote: 8 });
+    expect(p.calls).toEqual({ speak: 8 * 3, rank: 8, synthesize: 1, vote: 8, judge: 0 });
     expect(r.statements).toHaveLength(24);
     expect(r.tally).toBeDefined();
     expect(r.verdict).toContain("## Beslut");
@@ -112,7 +112,7 @@ describe("runSession (fake provider)", () => {
     const p = new FakeProvider();
     const r = await runSession({ ...base, mode: "chairman", rounds: 1, onEvent: (e) => e.type === "state" && states.push(e.state) }, p);
     expect(states).toEqual(["opening", "debating", "synthesizing", "voting", "done"]);
-    expect(p.calls).toEqual({ speak: 16, rank: 0, synthesize: 1, vote: 8 });
+    expect(p.calls).toEqual({ speak: 16, rank: 0, synthesize: 1, vote: 8, judge: 0 });
     expect(r.tally).toBeUndefined();
   });
 
@@ -161,5 +161,47 @@ describe("runSession (fake provider)", () => {
     await runSession({ ...base, rounds: 0, onEvent: (e) => events.push(e) }, new Slow());
     expect(events).toContainEqual(expect.objectContaining({ type: "statement_status", seatId: "s", round: 0, status: expect.objectContaining({ kind: "retrying" }) }));
     expect(events).toContainEqual({ type: "notice", text: "Magdalena Andersson: för många förfrågningar (rate limit) – nytt försök om 4 s (1/7)" });
+  });
+});
+
+describe("1-mot-1 debate (fake provider)", () => {
+  const s = members.find((m) => m.id === "s")!;
+  const m = members.find((x) => x.id === "m")!;
+  const duel = { question: "Ska Sverige bygga ny kärnkraft?", members: [m, s], talman, mode: "full" as const, format: "duell" as const };
+
+  it("alternates the two speakers, each hearing everything said before, then the Speaker names the winner", async () => {
+    const states: string[] = [];
+    const p = new FakeProvider({ duelWinner: "s" });
+    const r = await runSession({ ...duel, onEvent: (e) => e.type === "state" && states.push(e.state) }, p);
+    expect(r.state).toBe("done");
+    expect(r.format).toBe("duell");
+    expect(states).toEqual(["opening", "debating", "debating", "judging", "done"]);
+    expect(p.calls).toEqual({ speak: 6, rank: 0, synthesize: 0, vote: 0, judge: 1 });
+    // Speaking order M, S, M, S, M, S; each call carries everything said so far.
+    expect(p.seen.speak.map((x) => `${x.round}:${x.member.id}`)).toEqual(["0:m", "0:s", "1:m", "1:s", "2:m", "2:s"]);
+    expect(p.seen.speak.map((x) => x.transcript.length)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(p.seen.speak.map((x) => x.opponent?.id)).toEqual(["s", "m", "s", "m", "s", "m"]);
+    expect(p.seen.judge[0]!.transcript).toHaveLength(6);
+    expect(p.seen.judge[0]!.debaters.map((d) => d.id)).toEqual(["m", "s"]);
+    expect(r.winnerSeatId).toBe("s");
+    expect(r.verdict).toMatch(/^Vinnare: Magdalena Andersson/);
+    expect(r.finalVotes).toEqual([]);
+    expect(r.usage.map((u) => u.stage)).toContain("judge");
+  });
+
+  it("emits the winner after the judgment", async () => {
+    const events: SessionEvent[] = [];
+    await runSession({ ...duel, onEvent: (e) => events.push(e) }, new FakeProvider());
+    expect(events.filter((e) => e.type === "duel_result")).toEqual([{ type: "duel_result", winnerSeatId: "m" }]);
+    expect(events.some((e) => e.type === "verdict_delta")).toBe(true);
+  });
+
+  it("stops when a speaker fails, and needs two different members", async () => {
+    const r = await runSession(duel, new FakeProvider({ failSpeakFor: { s: 1 } }));
+    expect(r.state).toBe("failed");
+    expect(r.error).toMatch(/Magdalena Andersson kunde inte tala/);
+    expect(r.statements).toHaveLength(3);
+    const same = await runSession({ ...duel, members: [s, s] }, new FakeProvider());
+    expect(same.state).toBe("failed");
   });
 });

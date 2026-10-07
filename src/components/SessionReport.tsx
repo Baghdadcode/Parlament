@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { sittingDate, sittingTime } from "../core/riksdag";
+import { Avgorande } from "./Avgorande";
 import { Chamber } from "./Chamber";
 import { Protokoll } from "./Protokoll";
 import { Riksdagsbeslut } from "./Riksdagsbeslut";
@@ -24,6 +25,7 @@ export function SessionReport({ header, model }: { header: SessionHeader; model:
   const live = isLive(model);
   const when = model.createdAt ? new Date(model.createdAt) : null;
   const finished = model.stage === "done";
+  const duel = model.format === "duell";
 
   const decision = <Riksdagsbeslut key="beslut" model={model} question={header.question} />;
   const board = <Voteringstavla key="board" model={model} />;
@@ -39,8 +41,15 @@ export function SessionReport({ header, model }: { header: SessionHeader; model:
         </div>
       </details>
     ) : null;
+  const judgment = <Avgorande key="avgorande" model={model} question={header.question} />;
   // Live: follow the sitting from the chamber down. Afterwards: the decision first.
-  const order = finished ? [decision, board, chamber, preliminary] : [chamber, board, decision, preliminary];
+  const order = duel
+    ? finished
+      ? [judgment, chamber]
+      : [chamber, judgment]
+    : finished
+      ? [decision, board, chamber, preliminary]
+      : [chamber, board, decision, preliminary];
 
   return (
     <div className="space-y-5">
@@ -63,13 +72,26 @@ export function SessionReport({ header, model }: { header: SessionHeader; model:
             </span>
           )}
         </div>
-        <p className="font-serif text-xs uppercase tracking-[0.2em] text-riks-gold">§ 1 Partiledardebatt</p>
+        <p className="font-serif text-xs uppercase tracking-[0.2em] text-riks-gold">
+          § 1 {duel ? `Debatt 1 mot 1: ${model.seats.map((s) => `${s.name} (${s.short})`).join(" mot ")}` : "Partiledardebatt"}
+        </p>
         <h1 className="whitespace-pre-wrap font-serif text-2xl font-semibold leading-snug">{header.question}</h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-          <span>
-            {model.seats.length} partiledare · {model.rounds} replikskifte{model.rounds === 1 ? "" : "n"}
-          </span>
-          <span>{model.mode === "full" ? "Förberedande votering" : "Talmannen avgör"} + huvudvotering</span>
+          {duel ? (
+            <>
+              <span>
+                Ett anförande och {model.rounds} replik{model.rounds === 1 ? "" : "er"} var
+              </span>
+              <span>Talmannen avgör vem som vann</span>
+            </>
+          ) : (
+            <>
+              <span>
+                {model.seats.length} partiledare · {model.rounds} replikskifte{model.rounds === 1 ? "" : "n"}
+              </span>
+              <span>{model.mode === "full" ? "Förberedande votering" : "Talmannen avgör"} + huvudvotering</span>
+            </>
+          )}
           <span title="AI-modellen som partiledarna och talmannen använde">
             AI:{" "}
             {(header.usage?.models?.length ? header.usage.models : [...new Set([...model.seats, model.talman].map((m) => m.model))])

@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `format` text DEFAULT 'partiledardebatt' NOT NULL;
