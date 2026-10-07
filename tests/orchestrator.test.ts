@@ -150,6 +150,32 @@ describe("runSession (fake provider)", () => {
     expect(r.failedSeats).toContainEqual(expect.objectContaining({ seatId: "l", stage: "vote" }));
   });
 
+  it("lets the members speak one at a time, in speakers' list order, without hearing the same round", async () => {
+    let active = 0;
+    let most = 0;
+    const order: string[] = [];
+    class Counting extends FakeProvider {
+      override async speak(req: Parameters<FakeProvider["speak"]>[0]) {
+        active++;
+        most = Math.max(most, active);
+        order.push(`${req.round}:${req.member.id}`);
+        await new Promise((r) => setTimeout(r, 1));
+        try {
+          return await super.speak(req);
+        } finally {
+          active--;
+        }
+      }
+    }
+    const p = new Counting();
+    await runSession({ ...base, rounds: 1 }, p);
+    expect(most).toBe(1);
+    expect(order).toEqual([...ids.map((id) => `0:${id}`), ...ids.map((id) => `1:${id}`)]);
+    // Everyone in a round gets the same transcript: earlier rounds only.
+    expect(new Set(p.seen.speak.filter((x) => x.round === 1).map((x) => x.transcript.length))).toEqual(new Set([8]));
+    expect(p.seen.speak.filter((x) => x.round === 0).every((x) => x.transcript.length === 0)).toBe(true);
+  });
+
   it("passes call progress on as status events and retry notices", async () => {
     class Slow extends FakeProvider {
       override async speak(req: Parameters<FakeProvider["speak"]>[0]) {

@@ -36,8 +36,8 @@ export interface EstimateInput {
 const tokensFromChars = (chars: number) => Math.ceil(chars / 4);
 
 /**
- * Shared blocks (the brief, and in rebuttal rounds the transcript) are cached: the parallel calls of a round
- * start together, so assume half of them write the cache and half read it.
+ * Shared blocks (the brief, and in rebuttal rounds the transcript) are cached. Speeches in a round go one after
+ * another, so mostly read the cache, while the votes start together and mostly write it; assume half and half.
  */
 export function estimateSessionCost(input: EstimateInput): number {
   const briefTok = tokensFromChars(input.briefChars ?? 0);

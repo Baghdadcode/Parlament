@@ -158,7 +158,9 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
   const needed = minSurvivors(input.members.length);
 
   try {
-    // 1 + 2. Opening statements, then rebuttal rounds. Each round runs in parallel; everyone sees all earlier rounds.
+    // 1 + 2. Opening statements, then rebuttal rounds. Within a round the members speak one at a time, in the order
+    // of the speakers' list (as the page presents them, and gentle on rate limits), but nobody hears the others'
+    // speeches of the same round: everyone sees all earlier rounds and nothing else.
     let active = [...input.members];
     const lastText = new Map<string, string>();
     for (let round = 0; round <= rounds; round++) {
@@ -170,43 +172,38 @@ export async function runSession(input: SessionInput, provider: ParlamentProvide
         const m = input.members.find((x) => x.id === s.seatId)!;
         return { round: s.round, memberId: s.seatId, speaker: speakerName(m), text: s.text };
       });
-      const settled = await Promise.allSettled(
-        active.map(async (member) => {
-          try {
-            const r = await provider.speak({
-              member,
-              question: input.question,
-              brief: input.brief,
-              round,
-              totalRounds: rounds,
-              address: talman.address,
-              transcript,
-              onText: (text) => emit({ type: "statement_delta", seatId: member.id, round, text }),
-              onStatus: (status) => {
-                emit({ type: "statement_status", seatId: member.id, round, status });
-                const notice = retryNotice(member.name, status);
-                if (notice) emit({ type: "notice", text: notice });
-              },
-            });
-            record(r.usage);
-            emit({ type: "statement_done", seatId: member.id, round });
-            return { member, text: r.value };
-          } catch (err) {
-            const error = errorMessage(err);
-            failedSeats.push({ seatId: member.id, stage: "speak", round, error });
-            emit({ type: "statement_failed", seatId: member.id, round, error });
-            throw err;
-          }
-        }),
-      );
       const spoke: MemberDef[] = [];
-      // Keep the members' display order rather than completion order.
-      for (const s of settled) {
-        if (s.status !== "fulfilled") continue;
-        result.statements.push({ seatId: s.value.member.id, round, text: s.value.text });
-        lastText.set(s.value.member.id, s.value.text);
-        spoke.push(s.value.member);
+      const said: SeatStatement[] = [];
+      for (const member of active) {
+        try {
+          const r = await provider.speak({
+            member,
+            question: input.question,
+            brief: input.brief,
+            round,
+            totalRounds: rounds,
+            address: talman.address,
+            transcript,
+            onText: (text) => emit({ type: "statement_delta", seatId: member.id, round, text }),
+            onStatus: (status) => {
+              emit({ type: "statement_status", seatId: member.id, round, status });
+              const notice = retryNotice(member.name, status);
+              if (notice) emit({ type: "notice", text: notice });
+            },
+          });
+          record(r.usage);
+          emit({ type: "statement_done", seatId: member.id, round });
+          said.push({ seatId: member.id, round, text: r.value });
+          lastText.set(member.id, r.value);
+          spoke.push(member);
+        } catch (err) {
+          const error = errorMessage(err);
+          failedSeats.push({ seatId: member.id, stage: "speak", round, error });
+          emit({ type: "statement_failed", seatId: member.id, round, error });
+        }
       }
+      // Added after the round, so the transcript above stays the same for every speaker in it.
+      result.statements.push(...said);
       active = spoke;
       if (active.length < needed) {
         return finish(

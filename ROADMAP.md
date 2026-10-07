@@ -37,8 +37,9 @@ Drizzle on `node:sqlite`.
   builds on. The *huvudvotering* is an open ja/nej/avstår vote on the Speaker's text, weighted by `seats`. Voters see
   proposal letters with their parties ("förslag B (V)"), because the main vote is open. The seat counts in the files
   are from the 2022 election and need updating to 2026.
-- **One speaker at a time:** the speeches are still generated in parallel. The chamber view follows the speakers'
-  list in order (the first unfinished speech is at the rostrum), and you can pick any speech or "Följ live".
+- **One speaker at a time:** the speeches of a round are generated one after another in speakers' list order (gentle
+  on free-tier rate limits), though nobody hears the others in the same round. The page plays them back word by
+  word, and you can pick any speech or "Följ live".
 - **Replik arrows** come from names found in a statement (its `## Replik` section in older sessions; full name or surname, also in the
   genitive).
 - **Sitting numbers:** `riksmöte:N` counts sittings per riksmöte. The riksmöte starts in September.

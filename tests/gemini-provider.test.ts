@@ -1,6 +1,6 @@
 import { ApiError, ThinkingLevel } from "@google/genai";
 import { describe, expect, it } from "vitest";
-import { GeminiProvider, compareGemini, listGeminiModels, thinkingFor, type GeminiClient } from "../src/providers/gemini";
+import { GeminiProvider, compareGemini, isQuotaGone, listGeminiModels, retryDelayMs, thinkingFor, type GeminiClient } from "../src/providers/gemini";
 import { RefusalError } from "../src/providers/shared";
 import { loadMembers } from "../src/members/load";
 import type { SpeakRequest } from "../src/core/types";
@@ -120,7 +120,7 @@ describe("GeminiProvider error handling", () => {
         throw apiError(503);
       },
     ]);
-    const r = await new GeminiProvider({ client: flaky.client, backoffBaseMs: 0 }).speak(opening());
+    const r = await new GeminiProvider({ client: flaky.client, backoffBaseMs: 0, adaptivePacing: false }).speak(opening());
     expect(flaky.requests).toHaveLength(3);
     expect(r.value).toContain("Förslag");
 
@@ -131,6 +131,52 @@ describe("GeminiProvider error handling", () => {
     ]);
     await expect(new GeminiProvider({ client: bad.client, backoffBaseMs: 0 }).speak(opening())).rejects.toThrow("model not found");
     expect(bad.requests).toHaveLength(1);
+  });
+
+  const perMinute = (secs: number) =>
+    apiError(
+      429,
+      `{"error":{"code":429,"message":"You exceeded your current quota. Please retry in ${secs}.2s.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"${secs}s"}]}}`,
+    );
+
+  it("waits as long as Google asks after a rate limit, and keeps trying longer than for other errors", async () => {
+    expect(retryDelayMs(perMinute(37))).toBe(37_000);
+    expect(retryDelayMs(apiError(429, "Please retry in 2.5s."))).toBe(2500);
+    expect(retryDelayMs(apiError(503))).toBeNull();
+    const fails = Array.from({ length: 6 }, () => () => {
+      throw perMinute(20);
+    });
+    const { client, requests } = fakeGemini(fails);
+    const statuses: unknown[] = [];
+    const r = await new GeminiProvider({ client, backoffBaseMs: 0, maxRetryDelayMs: 0, adaptivePacing: false }).speak(
+      opening({ onStatus: (s) => statuses.push(s) }),
+    );
+    expect(requests).toHaveLength(7); // more than the 5 attempts other errors get
+    expect(r.value).toContain("Förslag");
+    expect(statuses).toContainEqual(expect.objectContaining({ kind: "retrying", maxAttempts: 8 }));
+  });
+
+  it("stops at once, with a readable message, when the day's free quota is gone", async () => {
+    const daily = apiError(
+      429,
+      '{"error":{"code":429,"message":"You exceeded your current quota. Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 250, model: gemini-3.5-flash","status":"RESOURCE_EXHAUSTED","details":[{"violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}',
+    );
+    expect(isQuotaGone(daily)).toBe(true);
+    expect(isQuotaGone(perMinute(5))).toBe(false);
+    const { client, requests } = fakeGemini([
+      () => {
+        throw daily;
+      },
+    ]);
+    await expect(new GeminiProvider({ client, backoffBaseMs: 0 }).speak(opening())).rejects.toThrow(/dagens gratiskvot för gemini-3.1-pro-preview är slut/);
+    expect(requests).toHaveLength(1);
+
+    const none = fakeGemini([
+      () => {
+        throw apiError(429, "Quota exceeded for metric: generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro");
+      },
+    ]);
+    await expect(new GeminiProvider({ client: none.client, backoffBaseMs: 0 }).speak(opening())).rejects.toThrow(/ingår inte i din nyckels gratisnivå/);
   });
 
   it("drops the thinking setting when a model rejects it", async () => {

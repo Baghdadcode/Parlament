@@ -12,7 +12,7 @@ import {
 import { LIMITS, type Effort } from "../config/models";
 import { getGeminiApiKey } from "../config/env";
 import type { CallResult, UsageRecord } from "../core/types";
-import { CallProvider, RefusalError, Semaphore, describeError, logRetry, safeCost, sleep, type CallOptions } from "./shared";
+import { CallProvider, Pacer, RefusalError, Semaphore, describeError, logRetry, safeCost, sleep, type CallOptions } from "./shared";
 
 /** The part of the SDK client this provider uses; tests pass a stand-in. */
 export interface GeminiClient {
@@ -26,14 +26,55 @@ export interface GeminiProviderOptions {
   client?: GeminiClient;
   /** Base delay for exponential backoff; tests set it to 0. */
   backoffBaseMs?: number;
+  /** Cap on the wait Google asks for after a rate limit; tests set it to 0. */
+  maxRetryDelayMs?: number;
+  /** Slow down (one request at a time, spaced out) after a rate limit. Default true; tests turn it off. */
+  adaptivePacing?: boolean;
 }
+
+/** Rate limits get more patience than other errors: the free tier counts requests per minute. */
+const RATE_LIMIT_ATTEMPTS = 8;
 
 /** Finish reasons that mean the model (or Google's filters) declined to answer. */
 const REFUSALS = new Set(["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION", "IMAGE_SAFETY"]);
 
 function isRetryable(err: unknown): boolean {
+  if (isQuotaGone(err)) return false;
   if (err instanceof ApiError) return err.status === 408 || err.status === 429 || err.status >= 500;
   return err instanceof TypeError; // fetch failed: connection reset, DNS, …
+}
+
+const isRateLimit = (err: unknown) => err instanceof ApiError && err.status === 429;
+
+/**
+ * A 429 that waiting a minute will not fix: the day's free quota is used up, or the model has no free quota at all
+ * ("limit: 0").
+ */
+export function isQuotaGone(err: unknown): boolean {
+  return isRateLimit(err) && /PerDay|per day|limit:\s*0\b/i.test((err as ApiError).message);
+}
+
+/** How long Google asks us to wait, from the error's RetryInfo ("retryDelay": "37s") or its text ("retry in 37.2s"). */
+export function retryDelayMs(err: unknown): number | null {
+  if (!(err instanceof ApiError)) return null;
+  const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(err.message) ?? /retry in (\d+(?:\.\d+)?)\s*s/i.exec(err.message);
+  return m ? Math.ceil(Number(m[1]) * 1000) : null;
+}
+
+/** A Gemini error a person can act on, instead of the raw JSON body. */
+export function readableGeminiError(err: unknown, model: string): Error {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error(String(err));
+  if (isQuotaGone(err)) {
+    return new Error(
+      /limit:\s*0\b/i.test(err.message)
+        ? `Gemini (429): ${model} ingår inte i din nyckels gratisnivå. Välj en annan modell, t.ex. en Flash-modell, eller aktivera betalning i Google AI Studio.`
+        : `Gemini (429): dagens gratiskvot för ${model} är slut. Försök igen i morgon, välj en annan modell eller aktivera betalning i Google AI Studio.`,
+      { cause: err },
+    );
+  }
+  if (isRateLimit(err)) return new Error(`Gemini (429): för många förfrågningar till ${model}, även efter flera försök. Vänta en minut och försök igen.`, { cause: err });
+  const detail = /"message"\s*:\s*"([^"]+)"/.exec(err.message)?.[1] ?? err.message;
+  return new Error(`Gemini (${err.status}): ${detail.slice(0, 300)}`, { cause: err });
 }
 
 /**
@@ -83,7 +124,11 @@ interface StreamResult {
 export class GeminiProvider extends CallProvider {
   private readonly client: GeminiClient;
   private readonly gate = new Semaphore(LIMITS.maxConcurrentRequests);
+  /** No gap normally; after a rate limit, requests are spaced out and then eased back. */
+  private readonly pacer = new Pacer(0);
   private readonly backoffBaseMs: number;
+  private readonly maxRetryDelayMs: number;
+  private readonly adaptivePacing: boolean;
   /** Models that rejected the thinking setting; they are called with the model's default instead. */
   private readonly noThinkingConfig = new Set<string>();
 
@@ -91,6 +136,20 @@ export class GeminiProvider extends CallProvider {
     super();
     this.client = opts.client ?? new GoogleGenAI({ apiKey: getGeminiApiKey() });
     this.backoffBaseMs = opts.backoffBaseMs ?? 1000;
+    this.maxRetryDelayMs = opts.maxRetryDelayMs ?? 65_000;
+    this.adaptivePacing = opts.adaptivePacing ?? true;
+  }
+
+  /** Rate-limited: one request at a time, with a growing gap between them. */
+  private throttle(): void {
+    if (!this.adaptivePacing) return;
+    this.pacer.slowDown();
+    this.gate.resize(1);
+  }
+
+  /** A success: ease back towards full speed. */
+  private ease(): void {
+    if (this.pacer.recover()) this.gate.resize(LIMITS.maxConcurrentRequests);
   }
 
   protected async call<T>(opts: CallOptions, parse: (text: string) => T): Promise<CallResult<T>> {
@@ -98,13 +157,16 @@ export class GeminiProvider extends CallProvider {
     let maxTokens = opts.maxTokens;
     let lastError: unknown;
 
-    for (let attempt = 0; attempt < LIMITS.maxAttempts; attempt++) {
+    let maxAttempts: number = LIMITS.maxAttempts;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         opts.onStatus?.({ kind: "queued" });
-        const r = await this.gate.run(() => {
+        const r = await this.gate.run(async () => {
+          await this.pacer.wait();
           opts.onStatus?.({ kind: "started" });
           return this.stream(opts, maxTokens);
         });
+        this.ease();
         usage.push(this.toUsage(r, opts));
 
         if (r.blockReason) throw new RefusalError(r.blockReason);
@@ -125,16 +187,21 @@ export class GeminiProvider extends CallProvider {
           this.noThinkingConfig.add(opts.seat.model);
           continue;
         }
-        if (!isRetryable(err)) throw err;
-        if (attempt + 1 >= LIMITS.maxAttempts) break;
-        const wait = this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random());
+        if (!isRetryable(err)) throw readableGeminiError(err, opts.seat.model);
+        if (isRateLimit(err)) {
+          maxAttempts = RATE_LIMIT_ATTEMPTS;
+          this.throttle();
+        }
+        if (attempt + 1 >= maxAttempts) break;
+        const asked = retryDelayMs(err);
+        const wait = asked !== null ? Math.min(asked, this.maxRetryDelayMs) * (1 + Math.random() * 0.1) : this.backoffBaseMs * 2 ** attempt * (0.5 + Math.random());
         const reason = describeError(err);
-        logRetry("Gemini", opts, reason, wait, attempt + 1, LIMITS.maxAttempts);
-        opts.onStatus?.({ kind: "retrying", reason, waitMs: wait, attempt: attempt + 1, maxAttempts: LIMITS.maxAttempts });
+        logRetry("Gemini", opts, reason, wait, attempt + 1, maxAttempts);
+        opts.onStatus?.({ kind: "retrying", reason, waitMs: wait, attempt: attempt + 1, maxAttempts });
         await sleep(wait);
       }
     }
-    throw lastError instanceof Error ? lastError : new Error("Gemini call failed after retries");
+    throw lastError ? readableGeminiError(lastError, opts.seat.model) : new Error("Gemini call failed after retries");
   }
 
   private async stream(opts: CallOptions, maxTokens: number): Promise<StreamResult> {

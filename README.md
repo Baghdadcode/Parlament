@@ -50,7 +50,9 @@ You need at least one of these keys. They stay on the server side.
   errors, raise `MISTRAL_MIN_INTERVAL_MS` in `.env.local`; on a paid plan, set `MISTRAL_TIER=paid`.
 - **Claude:** `ANTHROPIC_API_KEY`, a Console API key from console.anthropic.com. A Claude.ai subscription does not
   work.
-- **Gemini:** `GEMINI_API_KEY`, a Gemini API key from aistudio.google.com/apikey.
+- **Gemini:** `GEMINI_API_KEY`, a Gemini API key from aistudio.google.com/apikey. On Google's free tier, the app
+  waits as long as Google asks after a rate limit (often 20–60 seconds) and slows down, so a sitting can take a while.
+  When the day's free quota is used up, or a model is not in the free tier at all, it stops with a message saying so.
 
 The database is created automatically in `data/parlament.db`.
 
@@ -120,9 +122,9 @@ debates, not in the partiledardebatt. See [`members/egna/README.md`](members/egn
 Each question becomes a numbered sitting, e.g. *Riksdagens protokoll 2026/27:14*. A new riksmöte starts in
 September.
 
-1. **Anföranden (opening speeches):** all members speak in parallel without hearing each other. Each speech is one
-   short paragraph of running text (at most about 90 words, no headings) that opens with "Herr talman!". Other leaders
-   are referred to in the third person.
+1. **Anföranden (opening speeches):** the members speak one at a time, in speakers' list order, without hearing each
+   other. Each speech is one short paragraph of running text (at most about 90 words, no headings) that opens with
+   "Herr talman!". Other leaders are referred to in the third person.
 2. **Replikskifte 1 and 2 (rebuttal rounds):** each member reads the whole debate so far, with names, and answers one
    or two opponents by name, then says where they stand now and whether they changed their mind. This is also one
    short paragraph, at most about 70 words. The transcript is a cached prompt block shared by every member in the round.
