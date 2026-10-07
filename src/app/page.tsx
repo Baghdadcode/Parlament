@@ -18,16 +18,18 @@ export default async function Home() {
   const [briefs, status, recent] = await Promise.all([listBriefs(db), getKeyStatus(), listSessions(db, 5)]);
   const loaded = getMembers();
   const members = loaded.ok ? loaded.members.map(toMemberView) : [];
+  const custom = loaded.ok ? loaded.custom.map(toMemberView) : [];
   const seats = members.reduce((n, m) => n + m.seats, 0);
   return (
     <div className="space-y-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <AskForm
           members={members}
+          custom={custom}
           rounds={DEBATE_ROUNDS}
           briefs={briefs}
           canRunAtAll={status.ok && loaded.ok}
-          models={modelChoices(status, loaded.ok ? [loaded.talman, ...loaded.members].map((m) => m.model) : [], mistralPlan())}
+          models={modelChoices(status, loaded.ok ? [loaded.talman, ...loaded.members, ...loaded.custom].map((m) => m.model) : [], mistralPlan())}
         />
         {members.length > 0 && (
           <aside className="rounded-xl border border-zinc-200 bg-gradient-to-b from-riks-paper to-white p-4 dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-950">

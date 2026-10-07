@@ -1,7 +1,12 @@
 import { defineConfig } from "@playwright/test";
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 
-// Browser tests run the real app in offline fake mode: no API key, no cost.
+// Browser tests run the real app in offline fake mode: no API key, no cost. They work on a copy of the member files,
+// so creating your own members in a test never touches members/.
+const membersCopy = "./data/e2e-members";
+rmSync(membersCopy, { recursive: true, force: true });
+cpSync("./members", membersCopy, { recursive: true });
+
 const executablePath = existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined;
 
 export default defineConfig({
@@ -13,6 +18,6 @@ export default defineConfig({
     url: "http://localhost:3123",
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { PARLAMENT_FAKE: "1", PARLAMENT_DB_PATH: "./data/e2e.db", NEXT_TELEMETRY_DISABLED: "1" },
+    env: { PARLAMENT_FAKE: "1", PARLAMENT_DB_PATH: "./data/e2e.db", PARLAMENT_MEMBERS_DIR: membersCopy, NEXT_TELEMETRY_DISABLED: "1" },
   },
 });

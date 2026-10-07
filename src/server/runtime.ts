@@ -152,7 +152,7 @@ export interface StartInput {
 export async function startSession(input: StartInput): Promise<string> {
   const files = loadMembers();
   const format = input.format ?? "partiledardebatt";
-  const participants = format === "duell" ? pickDebaters(files.members, input.duel) : files.members;
+  const participants = format === "duell" ? pickDebaters([...files.members, ...files.custom], input.duel) : files.members;
   const [talman, ...members] = applyModel([files.talman, ...participants], input.model);
   const loaded = { ...files, members, talman: talman! };
   const mode: VotingMode = format === "duell" ? "chairman" : input.mode;
@@ -235,7 +235,7 @@ export function pickDebaters(members: MemberDef[], ids: string[] | null | undefi
   if (!ids || ids.length !== 2 || ids[0] === ids[1]) throw new Error("Välj två olika partiledare till debatten 1 mot 1.");
   return ids.map((id) => {
     const m = members.find((x) => x.id === id);
-    if (!m) throw new Error(`Okänd eller avstängd partiledare "${id}".`);
+    if (!m) throw new Error(`Okänd ledamot "${id}" (finns filen, och är den aktiv?).`);
     return m;
   });
 }

@@ -30,6 +30,8 @@ export interface MemberDef {
   hash: string;
   /** File name inside the members folder. */
   file: string;
+  /** A member you made yourself (members/egna/): anyone at all, who can take part in a 1-mot-1 debate. */
+  custom?: boolean;
 }
 
 export type Stage = "opening" | "debate" | "rank" | "synthesize" | "vote" | "judge";

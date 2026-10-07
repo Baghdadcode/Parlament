@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { DEFAULT_MODEL, EFFORTS, LIMITS, MODEL_ID_PATTERN } from "../config/models";
@@ -121,6 +121,124 @@ export interface LoadedMembers {
   talman: MemberDef;
   /** Every parsed file, including disabled ones. */
   all: MemberDef[];
+  /** Your own members from members/egna/, for 1-mot-1 debates. */
+  custom: MemberDef[];
+  /** Files in members/egna/ that could not be used; they are skipped instead of stopping the app. */
+  customErrors: { file: string; error: string }[];
+}
+
+/** The folder for your own members, inside the members folder. */
+export const CUSTOM_DIR = "egna";
+
+const customSchema = z.object({
+  id: z.string().regex(/^[a-z0-9-]+$/, "use lowercase letters, digits and dashes").optional(),
+  name: z.string().min(1),
+  /** Party, movement or whatever the person stands for; optional. */
+  party: z.string().min(1).default("Egen ledamot"),
+  short: z.string().min(1).max(5).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{3,8}$/, 'use a hex colour like "#7C3AED"').optional(),
+  title: z.string().min(1).default("Gästtalare"),
+  enabled: bool.default(true),
+  order: z.coerce.number().default(100),
+  model: z.string().regex(MODEL_ID_PATTERN, 'use a model ID such as "mistral-large-latest" or "claude-opus-5-5"').default(DEFAULT_MODEL),
+  effort: z.enum(EFFORTS).default("medium"),
+});
+
+const CUSTOM_COLORS = ["#7C3AED", "#0F766E", "#B45309", "#BE185D", "#4338CA", "#15803D", "#9F1239", "#0369A1"];
+
+/** "Astrid Lindgren" -> "astrid-lindgren"; Swedish letters lose their dots. */
+export function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+}
+
+/** "Astrid Lindgren" -> "AL" */
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase())
+    .join("")
+    .slice(0, 3) || "?";
+
+/**
+ * A member file of your own. Only `name` and the persona are required: the id comes from the name, the short form
+ * from the initials, and the colour from a fixed palette.
+ */
+export function parseCustomFile(file: string, content: string): MemberDef {
+  let parsed: ReturnType<typeof parseFrontmatter>;
+  try {
+    parsed = parseFrontmatter(content);
+  } catch (err) {
+    throw new MemberFileError(file, err instanceof Error ? err.message : String(err));
+  }
+  const fm = customSchema.safeParse(parsed.data);
+  if (!fm.success) {
+    const issues = fm.error.issues.map((i) => `${i.path.join(".") || "frontmatter"}: ${i.message}`).join("; ");
+    throw new MemberFileError(file, issues);
+  }
+  const persona = stripComments(parsed.body);
+  if (!persona) throw new MemberFileError(file, "the persona (text below the frontmatter) is empty");
+  const hash = createHash("sha256").update(content).digest("hex").slice(0, 12);
+  const id = fm.data.id ?? slugify(fm.data.name);
+  if (!id) throw new MemberFileError(file, "give the member an id (lowercase letters, digits and dashes)");
+  const short = fm.data.short ?? initialsOf(fm.data.name);
+  return {
+    id,
+    name: fm.data.name,
+    party: fm.data.party,
+    short,
+    color: fm.data.color ?? CUSTOM_COLORS[parseInt(hash.slice(0, 6), 16) % CUSTOM_COLORS.length]!,
+    role: "ledamot",
+    enabled: fm.data.enabled,
+    order: fm.data.order,
+    title: fm.data.title,
+    seats: 0,
+    placement: fm.data.order,
+    address: "Herr talman",
+    persona,
+    model: fm.data.model,
+    effort: fm.data.effort,
+    hash,
+    file: `${CUSTOM_DIR}/${file}`,
+    custom: true,
+  };
+}
+
+/**
+ * Reads members/egna/*.md. A broken file, or one whose id or short form is already taken, is reported and skipped,
+ * so one bad file never stops the regular debate.
+ */
+export function loadCustomMembers(dir: string, taken: MemberDef[]): Pick<LoadedMembers, "custom" | "customErrors"> {
+  const custom: MemberDef[] = [];
+  const customErrors: LoadedMembers["customErrors"] = [];
+  if (!existsSync(dir)) return { custom, customErrors };
+  const ids = new Map(taken.map((m) => [m.id, m.file]));
+  const shorts = new Map(taken.filter((m) => m.role === "ledamot").map((m) => [m.short.toLowerCase(), m.file]));
+  const files = readdirSync(dir)
+    .filter((f) => f.toLowerCase().endsWith(".md") && f.toLowerCase() !== "readme.md")
+    .sort();
+  for (const f of files) {
+    try {
+      const m = parseCustomFile(f, readFileSync(join(dir, f), "utf8"));
+      const idClash = ids.get(m.id);
+      if (idClash) throw new MemberFileError(m.file, `id "${m.id}" is already used by ${idClash}`);
+      const shortClash = shorts.get(m.short.toLowerCase());
+      if (shortClash) throw new MemberFileError(m.file, `short "${m.short}" is already used by ${shortClash}; set another short:`);
+      ids.set(m.id, m.file);
+      shorts.set(m.short.toLowerCase(), m.file);
+      if (m.enabled) custom.push(m);
+    } catch (err) {
+      customErrors.push({ file: `${CUSTOM_DIR}/${f}`, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  custom.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "sv"));
+  return { custom, customErrors };
 }
 
 /**
@@ -135,7 +253,8 @@ export function loadMembers(dir: string = getMembersDir()): LoadedMembers {
     throw new MemberFileError(dir, "the members folder does not exist");
   }
   const all = files.sort().map((f) => parseMemberFile(f, readFileSync(join(dir, f), "utf8")));
-  return validateMembers(all);
+  const loaded = validateMembers(all);
+  return { ...loaded, ...loadCustomMembers(join(dir, CUSTOM_DIR), all) };
 }
 
 export function validateMembers(all: MemberDef[]): LoadedMembers {
@@ -162,7 +281,7 @@ export function validateMembers(all: MemberDef[]): LoadedMembers {
       `a debate needs ${LIMITS.minMembers} to ${LIMITS.maxMembers} enabled members (role: ledamot), found ${members.length}`,
     );
   }
-  return { members, talman: talmen[0] ?? DEFAULT_TALMAN, all };
+  return { members, talman: talmen[0] ?? DEFAULT_TALMAN, all, custom: [], customErrors: [] };
 }
 
 export const speakerName = (m: Pick<MemberDef, "name" | "short">) => `${m.name} (${m.short})`;

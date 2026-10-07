@@ -6,7 +6,8 @@ where they answer each other by name and can change their proposal. They **rank 
 blind**, the **Speaker (Talmannen)** turns the winner into a proposed decision, and the chamber holds an **open
 vote (huvudvotering)**: every party votes ja, nej or avstår with its seats.
 
-Or pick **Debatt 1 mot 1**: two leaders of your choice debate face to face, and the Speaker decides who won.
+Or pick **Debatt 1 mot 1**: two leaders of your choice debate face to face, and the Speaker decides who won. Either
+side can also be **your own member**: anyone at all, from yourself to a historical figure, written as a markdown file.
 
 It looks and feels like the chamber:
 - **Chamber view:** a seating diagram (one dot per seat) with the Speaker's podium and the rostrum. The speaking
@@ -95,6 +96,20 @@ member, add a file; to remove one, set `enabled: false`. A debate takes 3–9 me
 [`members/README.md`](members/README.md) for the full format. The **Ledamöter** page in the app shows what was loaded,
 and a broken file shows its error at the top of every page.
 
+### Your own members (egna ledamöter)
+
+Anyone can debate 1 mot 1: you, a friend, a local politician, a historical figure or a character from a novel. Each
+one is a markdown file in [`members/egna/`](members/egna/), in the same format as the leaders, but only `name:` and a
+description are required. The id comes from the name, the abbreviation from the initials, and the colour from a
+palette; `title`, `party`, `short`, `color`, `model` and `effort` are optional. The repo ships one example,
+`astrid-lindgren.md`.
+
+Create them on the **Ledamöter** page under *Egna ledamöter*: write the file from a template (**+ Ny ledamot**),
+upload a ready-made `.md` file (**Ladda upp .md-fil**), or edit and delete existing ones. You can also put files in the
+folder directly. A file with an error, or with an id or abbreviation already taken by someone else, is skipped and
+its error is shown on that page; it never stops the regular debate. Your own members take part only in 1-mot-1
+debates, not in the partiledardebatt. See [`members/egna/README.md`](members/egna/README.md) for the format.
+
 ## How a question runs
 
 Each question becomes a numbered sitting, e.g. *Riksdagens protokoll 2026/27:14*. A new riksmöte starts in
@@ -124,8 +139,8 @@ vote still happens.
 
 ### Debatt 1 mot 1
 
-Under **Debattform** on the ask page, choose **Debatt 1 mot 1** and pick two leaders: who opens (*Inleder*) and who
-answers (*Mot*). ⇄ swaps them.
+Under **Debattform** on the ask page, choose **Debatt 1 mot 1** and pick two debaters: who opens (*Inleder*) and who
+answers (*Mot*). ⇄ swaps them. Each list has the party leaders and, under *Egna ledamöter*, your own members.
 
 1. They speak one at a time, each hearing everything said so far: an opening speech each, then two replies each
    (A, B, A, B, A, B). Every speech is one short paragraph, as in the party debate.

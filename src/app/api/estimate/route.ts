@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     const loaded = getMembers();
     if (!loaded.ok) return json({ error: loaded.error }, 500);
     const brief = input.briefId ? await getBrief(await getDb(), input.briefId) : null;
-    const participants = input.format === "duell" ? pickDebaters(loaded.members, input.duel) : loaded.members;
+    const participants = input.format === "duell" ? pickDebaters([...loaded.members, ...loaded.custom], input.duel) : loaded.members;
     const [talman, ...members] = applyModel([loaded.talman, ...participants], input.model);
     const usd = estimateSessionCost({
       members,

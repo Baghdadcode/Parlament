@@ -11,12 +11,15 @@ import { PartyBadge } from "./PartyChip";
 
 export function AskForm({
   members,
+  custom = [],
   rounds,
   briefs,
   canRunAtAll,
   models,
 }: {
   members: MemberView[];
+  /** Your own members (members/egna/), who can only take part in a 1-mot-1 debate. */
+  custom?: MemberView[];
   rounds: number;
   briefs: BriefView[];
   canRunAtAll: boolean;
@@ -77,7 +80,7 @@ export function AskForm({
   }
 
   const canRun = canRunAtAll && !!selectedModel?.available && duelOk && question.trim().length >= 3 && !submitting;
-  const byId = new Map(members.map((m) => [m.id, m]));
+  const byId = new Map([...members, ...custom].map((m) => [m.id, m]));
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -105,7 +108,7 @@ export function AskForm({
           {(
             [
               ["partiledardebatt", "Partiledardebatt", `Alla ${members.length} partiledare debatterar; kammaren röstar om talmannens förslag`],
-              ["duell", "Debatt 1 mot 1", "Två partiledare möts; talmannen avgör vem som vann"],
+              ["duell", "Debatt 1 mot 1", "Två partiledare eller egna ledamöter möts; talmannen avgör vem som vann"],
             ] as const
           ).map(([value, label, hint]) => (
             <label
@@ -141,11 +144,22 @@ export function AskForm({
                 onChange={(e) => set(e.target.value)}
                 className="w-full rounded-lg border border-zinc-300 bg-transparent p-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               >
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.short})
-                  </option>
-                ))}
+                <optgroup label="Partiledare">
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.short})
+                    </option>
+                  ))}
+                </optgroup>
+                {custom.length > 0 && (
+                  <optgroup label="Egna ledamöter">
+                    {custom.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.title})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           ))}
@@ -160,7 +174,14 @@ export function AskForm({
           >
             ⇄ Byt
           </button>
-          {!duelOk && <p className="text-xs text-red-600 sm:order-4 sm:col-span-3">Välj två olika partiledare.</p>}
+          {!duelOk && <p className="text-xs text-red-600 sm:order-4 sm:col-span-3">Välj två olika debattörer.</p>}
+          <p className="text-xs text-zinc-500 sm:order-5 sm:col-span-3">
+            Vill du se någon annan i talarstolen, till exempel dig själv eller en historisk person?{" "}
+            <Link href="/ledamoter#egna" className="text-riks-navy underline dark:text-riks-gold-soft">
+              Skapa en egen ledamot
+            </Link>
+            {custom.length > 0 ? ` (${custom.length} finns under "Egna ledamöter" i listan).` : "."}
+          </p>
         </div>
       )}
 

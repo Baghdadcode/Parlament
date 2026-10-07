@@ -5,6 +5,7 @@ node_modules/
 .env.*.local
 data/*.db
 data/*.db-*
+data/e2e-members/
 *.log
 coverage/
 .next/

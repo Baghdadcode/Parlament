@@ -117,7 +117,7 @@ test("a 1-mot-1 debate: two leaders take turns and the Speaker names the winner"
   await expect(page.getByText("Förberedande votering", { exact: true })).toHaveCount(0);
   await page.getByRole("combobox", { name: /Inleder/ }).selectOption({ label: "Ulf Kristersson (M)" });
   await page.getByRole("combobox", { name: /^Mot/ }).selectOption({ label: "Ulf Kristersson (M)" });
-  await expect(page.getByText("Välj två olika partiledare.")).toBeVisible();
+  await expect(page.getByText("Välj två olika debattörer.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Fråga riksdagen" })).toBeDisabled();
   await page.getByRole("combobox", { name: /^Mot/ }).selectOption({ label: "Nooshi Dadgostar (V)" });
   await page.getByRole("button", { name: "Fråga riksdagen" }).click();
@@ -141,4 +141,43 @@ test("a 1-mot-1 debate: two leaders take turns and the Speaker names the winner"
 
   await page.getByRole("link", { name: "Protokoll", exact: true }).click();
   await expect(page.getByRole("row", { name: new RegExp(run) }).filter({ hasText: "Ny kärnkraft" }).getByText("1 mot 1")).toBeVisible();
+});
+
+test("your own member: write it on the members page, then debate a party leader 1 mot 1", async ({ page }) => {
+  await page.goto("/ledamoter");
+  await expect(page.getByRole("heading", { name: "Egna ledamöter" })).toBeVisible();
+  await expect(page.getByText("Astrid Lindgren", { exact: true })).toBeVisible(); // the shipped example
+
+  // A broken file is refused with the reason.
+  await page.getByRole("button", { name: "+ Ny ledamot" }).click();
+  await page.getByLabel(/Ny ledamot/).fill("bara text");
+  await page.getByRole("button", { name: "Skapa ledamot" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /frontmatter/ })).toBeVisible();
+
+  const name = `Testa Testsson ${run}`;
+  await page.getByLabel(/Ny ledamot/).fill(`---\nname: ${name}\ntitle: Kommunalråd\nshort: TT\n---\nEn lugn lokalpolitiker som älskar cykelbanor.`);
+  await page.getByRole("button", { name: "Skapa ledamot" }).click();
+  await expect(page.getByText(/Sparad som members\/egna\/testa-testsson-/)).toBeVisible();
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
+
+  // Upload a ready-made file too.
+  await page.getByRole("button", { name: "+ Ny ledamot" }).click();
+  await page.getByLabel("Ladda upp en ledamotsfil").setInputFiles({
+    name: "upp.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from(`---\nname: Uppa Laddsson ${run}\nshort: UL\n---\nKommer från en fil.`),
+  });
+  await expect(page.getByText("upp.md inläst. Granska och spara.")).toBeVisible();
+  await page.getByRole("button", { name: "Skapa ledamot" }).click();
+  await expect(page.getByText(/Sparad som members\/egna\/uppa-laddsson-/)).toBeVisible();
+
+  await page.goto("/");
+  await page.getByLabel("Din fråga till riksdagen").fill(`Fler cykelbanor? (${run})`);
+  await page.getByLabel(/Debatt 1 mot 1/).check();
+  await page.getByRole("combobox", { name: /Inleder/ }).selectOption({ label: `${name} (Kommunalråd)` });
+  await page.getByRole("combobox", { name: /^Mot/ }).selectOption({ label: "Ebba Busch (KD)" });
+  await page.getByRole("button", { name: "Fråga riksdagen" }).click();
+  await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: `${name} vann debatten` })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(new RegExp(`Debatt 1 mot 1: ${name} \\(TT\\) mot Ebba Busch \\(KD\\)`))).toBeVisible();
 });

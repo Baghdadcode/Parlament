@@ -31,6 +31,15 @@ export function transcriptBlock(entries: TranscriptEntry[]): string {
 }
 
 function personaBlock(member: MemberDef): string {
+  if (member.custom) {
+    return [
+      `Du deltar i en simulerad debatt i Sveriges riksdag. Du spelar ${member.name} (${member.title}, ${member.party}), en gäst i kammaren.`,
+      "Det här är en AI-simulering för att pröva argument. Var den här personen: tala utifrån de åsikter, kunskaper, värderingar och den stil som beskrivs nedan, även om personen är historisk, påhittad eller aldrig har varit politiker. En historisk person talar utifrån sin tid men svarar på frågan som den ställs. Hitta inte på citat, siffror eller händelser; säg hellre att något är osäkert.",
+      "",
+      "## Din persona",
+      member.persona,
+    ].join("\n");
+  }
   return [
     `Du deltar i en simulerad debatt i Sveriges riksdag. Du spelar ${member.name}, ${member.role === "talman" ? "" : "partiledare för "}${member.party} (${member.short}).`,
     "Det här är en AI-simulering för att pröva argument. Håll dig till partiets kända politik och personens offentliga stil. Hitta inte på citat, siffror eller händelser; säg hellre att något är osäkert.",

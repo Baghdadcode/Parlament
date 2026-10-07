@@ -80,11 +80,13 @@ Drizzle on `node:sqlite`.
       printable Protokoll; navy, gold and serif theme with dark mode; gavel and chime sounds
 - [x] Debatt 1 mot 1: two chosen leaders speak in turn (each hears the other), and the Speaker names the winner
       ("Vinnare: …" line, parsed by name, surname or party); stored with `sessions.format = "duell"`
+- [x] Egna ledamöter: anyone as a markdown file in `members/egna/` (only `name` required), created, uploaded, edited
+      and deleted from the Ledamöter page; they can debate 1 mot 1. Broken or clashing files are skipped and reported
 
 ## Ideas (not started)
 
 - [ ] More debate formats: interpellationsdebatt, utskottsbehandling (committee stage), frågestund, statsministerns frågestund
 - [ ] Per-question round picker and a "only these parties" selector
 - [ ] Follow-up questions that continue an earlier debate
-- [ ] Edit member files from the browser
+- [ ] Edit the party leaders' files from the browser (your own members can already be edited there)
 - [ ] Web search for facts during the debate (server-side tool)

@@ -13,6 +13,8 @@ export interface MemberView {
   placement: number;
   model: string;
   effort: string;
+  /** One of your own members (members/egna/), not a party leader. */
+  custom?: boolean;
 }
 
 export const toMemberView = (m: MemberDef): MemberView => ({
@@ -26,6 +28,7 @@ export const toMemberView = (m: MemberDef): MemberView => ({
   placement: m.placement,
   model: m.model,
   effort: m.effort,
+  ...(m.custom ? { custom: true } : {}),
 });
 
 export interface BriefView {

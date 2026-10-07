@@ -36,3 +36,5 @@ Fri markdown: personlighet, ideologi, debattstil, relationer, röda linjer ...
 - Det behövs minst 3 och högst 9 aktiva ledamöter, och högst en talman (saknas talman används en neutral standardtalman).
 - Personerna är AI-simuleringar som bygger på partiernas och ledarnas offentliga hållning. De är inte de verkliga
   personernas åsikter, och fakta kan vara inaktuella, så redigera fritt.
+- Egna ledamöter (vem som helst: du själv, en historisk person, en romanfigur …) ligger i undermappen `egna/` och kan
+  debattera i Debatt 1 mot 1. Där krävs bara `name:` och en beskrivning; se `egna/README.md`.
