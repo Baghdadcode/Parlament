@@ -14,6 +14,11 @@ It looks and feels like the chamber:
   party glows, and arrows show who replied to whom.
 - **Talarlista:** the speakers' list, with numbered speeches ("Anf. 12") and speaking time.
 - **Rostrum:** the current speech, with a broadcast-style name tag.
+- **One speaker at a time:** while a sitting runs, speeches are shown in the speakers' list order, whatever order they
+  arrive in. Each one is revealed word by word (about six words a second), stays up for 5 seconds, and then the next
+  speaker takes the rostrum. The vote and the Speaker's decision or judgment follow once every speech has been shown.
+  **Nästa talare ⏭** skips ahead and **Visa allt** shows everything at once. The pace is set by `WORD_MS` and
+  `PAUSE_MS` in `src/components/playback.ts`. A saved sitting opens in full.
 - **Voting board:** the result of the main vote, then a knock of the gavel.
 - **Decision:** a formal *Riksdagsbeslut* document, with reservations credited to their parties.
 - **Protokoll:** the full record of proceedings, which you can print or save as PDF.

@@ -3,7 +3,7 @@
 import { speakingTime } from "../core/riksdag";
 import { phaseShort, roundLabel } from "./format";
 import { Avatar } from "./PartyChip";
-import type { Anforande } from "./model";
+import { anfKey, type Anforande } from "./model";
 
 /** The speakers' list, as the Speaker reads it: numbered speeches per round, with status and speaking time. */
 export function Talarlista({
@@ -65,7 +65,6 @@ export function Talarlista({
   );
 }
 
-export const anfKey = (a: Pick<Anforande, "round" | "seat">) => `${a.round}:${a.seat.id}`;
 
 function Status({ statement, selected }: { statement: Anforande["statement"]; selected: boolean }) {
   const { status, text, phase } = statement;

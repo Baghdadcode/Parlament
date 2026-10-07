@@ -5,12 +5,17 @@ import { mentions } from "../core/riksdag";
 import { DebateRounds } from "./DebateRounds";
 import { Hemicycle, VOTE_COLORS, type ReplikArc } from "./Hemicycle";
 import { Rostrum } from "./Rostrum";
-import { anfKey, Talarlista } from "./Talarlista";
-import { anforanden, isLive, winnerOf, type Anforande, type SessionModel } from "./model";
+import { Talarlista } from "./Talarlista";
+import { anfKey, anforanden, isLive, winnerOf, type Anforande, type SessionModel } from "./model";
 import { DuelStage } from "./DuelStage";
+import type { PlaybackControls } from "./SessionReport";
 
 /** Which speech the rostrum shows when the viewer has not picked one. */
 function autoPick(model: SessionModel, items: Anforande[]): Anforande | null {
+  if (model.spotlight) {
+    const shown = items.find((i) => anfKey(i) === model.spotlight);
+    if (shown) return shown;
+  }
   const debating = isLive(model) && (model.stage === "opening" || model.stage === "debating");
   if (debating) {
     const inRound = items.filter((i) => i.round === model.round);
@@ -23,7 +28,7 @@ function autoPick(model: SessionModel, items: Anforande[]): Anforande | null {
 }
 
 /** The chamber: seats, rostrum and speakers' list, or every speech side by side. */
-export function Chamber({ model }: { model: SessionModel }) {
+export function Chamber({ model, playback }: { model: SessionModel; playback?: PlaybackControls }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [view, setView] = useState<"kammare" | "alla">("kammare");
   const [colorChoice, setColorChoice] = useState<"auto" | "party" | "vote">("auto");
@@ -71,11 +76,39 @@ export function Chamber({ model }: { model: SessionModel }) {
             onChange={setColorChoice}
           />
         )}
-        {picked && isLive(model) && (
-          <button onClick={() => setPicked(null)} className="ml-auto text-xs font-medium text-red-600 hover:underline dark:text-red-400">
-            ● Följ live
-          </button>
-        )}
+        {(picked && isLive(model)) || playback ? (
+          <div className="ml-auto flex items-center gap-3 text-xs">
+            {picked && isLive(model) && (
+              <button onClick={() => setPicked(null)} className="font-medium text-red-600 hover:underline dark:text-red-400">
+                ● Följ live
+              </button>
+            )}
+            {playback && (
+              <>
+                <button
+                  onClick={() => {
+                    setPicked(null);
+                    playback.next();
+                  }}
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                  title="Hoppa till nästa anförande i talarlistan"
+                >
+                  Nästa talare ⏭
+                </button>
+                <button
+                  onClick={() => {
+                    setPicked(null);
+                    playback.showAll();
+                  }}
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                  title="Visa alla anföranden direkt, utan uppspelning"
+                >
+                  Visa allt
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {view === "alla" ? (

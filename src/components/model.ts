@@ -57,6 +57,8 @@ export interface SessionModel extends SessionMeta {
   saved: boolean;
   /** Latest notice while waiting (e.g. rate limiting); cleared when progress resumes. */
   notice: string | null;
+  /** The speech being presented at the rostrum during playback ("round:seatId"); null otherwise. */
+  spotlight?: string | null;
 }
 
 export function initialModel(meta: SessionMeta): SessionModel {
@@ -139,6 +141,8 @@ export function droppedIn(m: Pick<SessionModel, "statements">, seatId: string): 
   }
   return null;
 }
+
+export const anfKey = (a: { round: number; seat: { id: string } }) => `${a.round}:${a.seat.id}`;
 
 export interface Anforande {
   round: number;

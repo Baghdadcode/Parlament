@@ -19,8 +19,14 @@ export interface SessionHeader {
   usage?: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; models?: string[] };
 }
 
+/** Controls while a live sitting is presented one speech at a time. */
+export interface PlaybackControls {
+  next: () => void;
+  showAll: () => void;
+}
+
 /** A sitting of the chamber: the live chamber view, or the record of proceedings. */
-export function SessionReport({ header, model }: { header: SessionHeader; model: SessionModel }) {
+export function SessionReport({ header, model, playback }: { header: SessionHeader; model: SessionModel; playback?: PlaybackControls }) {
   const [tab, setTab] = useState<"kammaren" | "protokoll">("kammaren");
   const live = isLive(model);
   const when = model.createdAt ? new Date(model.createdAt) : null;
@@ -29,7 +35,7 @@ export function SessionReport({ header, model }: { header: SessionHeader; model:
 
   const decision = <Riksdagsbeslut key="beslut" model={model} question={header.question} />;
   const board = <Voteringstavla key="board" model={model} />;
-  const chamber = <Chamber key="chamber" model={model} />;
+  const chamber = <Chamber key="chamber" model={model} playback={playback} />;
   const preliminary =
     model.mode === "full" ? (
       <details key="prelim" open={live && model.stage !== "synthesizing" && model.stage !== "voting" ? true : undefined} className="group">

@@ -13,6 +13,7 @@ test("a sitting: chamber, speakers' list, main vote, decision and the record", a
   await page.getByRole("button", { name: "Fråga riksdagen" }).click();
 
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 30_000 }); // first compile in dev mode is slow
+  await page.getByRole("button", { name: "Visa allt" }).click(); // skip the word-by-word playback
   await expect(page.getByText(/Riksdagens protokoll \d{4}\/\d{2}:\d+/).first()).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Talarlista" })).toBeVisible();
 
@@ -54,6 +55,7 @@ test("Speaker-decides mode skips the preliminary vote but still holds the main v
   await page.getByLabel("Din fråga till riksdagen").fill("Snabb fråga: höjd pension?");
   await page.getByLabel(/Talmannen avgör/).check();
   await page.getByRole("button", { name: "Fråga riksdagen" }).click();
+  await page.getByRole("button", { name: "Visa allt" }).click();
   await expect(page.getByText("Kammaren har bifallit förslaget.")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/Valt förslag: A \(S\)/)).toBeVisible();
   await expect(page.getByText("Förberedande votering (anonym rangordning av slutförslagen)")).toHaveCount(0);
@@ -70,6 +72,7 @@ test("the AI model can be switched to Gemini for a sitting", async ({ page }) =>
   await expect(page.getByText(/Uppskattad kostnad: ~\$/)).toBeVisible();
   await page.getByLabel("Din fråga till riksdagen").fill("Ska elområdena slopas?");
   await page.getByRole("button", { name: "Fråga riksdagen" }).click();
+  await page.getByRole("button", { name: "Visa allt" }).click();
   await expect(page.getByText("Kammaren har bifallit förslaget.")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("AI: Gemini 3.1 Pro", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Alla anföranden" }).click();
@@ -123,6 +126,7 @@ test("a 1-mot-1 debate: two leaders take turns and the Speaker names the winner"
   await page.getByRole("button", { name: "Fråga riksdagen" }).click();
 
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 30_000 });
+  await page.getByRole("button", { name: "Visa allt" }).click();
   await expect(page.getByText(/§ 1 Debatt 1 mot 1: Ulf Kristersson \(M\) mot Nooshi Dadgostar \(V\)/)).toBeVisible();
   await expect(page.getByRole("group", { name: "Debatt 1 mot 1" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Ulf Kristersson vann debatten" })).toBeVisible({ timeout: 60_000 });
@@ -178,6 +182,37 @@ test("your own member: write it on the members page, then debate a party leader 
   await page.getByRole("combobox", { name: /^Mot/ }).selectOption({ label: "Ebba Busch (KD)" });
   await page.getByRole("button", { name: "Fråga riksdagen" }).click();
   await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 30_000 });
+  await page.getByRole("button", { name: "Visa allt" }).click();
   await expect(page.getByRole("heading", { name: `${name} vann debatten` })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(new RegExp(`Debatt 1 mot 1: ${name} \\(TT\\) mot Ebba Busch \\(KD\\)`))).toBeVisible();
+});
+
+test("a live sitting is shown one speech at a time, word by word, with a pause before the next speaker", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Din fråga till riksdagen").fill(`Uppspelning? (${run})`);
+  await page.getByLabel(/Debatt 1 mot 1/).check();
+  await page.getByRole("combobox", { name: /Inleder/ }).selectOption({ label: "Ulf Kristersson (M)" });
+  await page.getByRole("combobox", { name: /^Mot/ }).selectOption({ label: "Ebba Busch (KD)" });
+  await page.getByRole("button", { name: "Fråga riksdagen" }).click();
+  await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 30_000 });
+
+  const rostrum = page.getByRole("region", { name: "Talarstolen" });
+  const list = page.getByRole("navigation", { name: "Talarlista" });
+  // The first speech is revealed bit by bit, even though the fake debate is already over on the server.
+  await expect(rostrum.getByText(/^Herr talman! Som Ulf/)).toBeVisible();
+  await expect(rostrum.getByText(/årligen så att kostnaderna inte skenar/)).toHaveCount(0);
+  await expect(list.getByRole("button").nth(1)).toContainText("väntar");
+  await expect(page.getByText("TALMANNENS AVGÖRANDE", { exact: true })).toHaveCount(0);
+  // Then it stands in full, and the next speaker waits through the pause.
+  await expect(rostrum.getByText(/kostnaderna inte skenar/)).toBeVisible({ timeout: 15_000 });
+  await expect(list.getByRole("button").nth(1)).toContainText("väntar");
+  await expect(rostrum).toContainText("Ordet går till Ulf Kristersson");
+  await expect(rostrum).not.toContainText("Ebba Busch");
+  await expect(rostrum.getByText(/^Herr talman! Som Ebba Busch/)).toBeVisible({ timeout: 10_000 });
+
+  // "Nästa talare" moves on at once; "Visa allt" shows the rest.
+  await page.getByRole("button", { name: "Nästa talare ⏭" }).click();
+  await expect(rostrum.getByText(/Replikskifte 1/)).toBeVisible();
+  await page.getByRole("button", { name: "Visa allt" }).click();
+  await expect(page.getByRole("heading", { name: "Ulf Kristersson vann debatten" })).toBeVisible({ timeout: 30_000 });
 });
