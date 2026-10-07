@@ -14,7 +14,8 @@ Drizzle on `node:sqlite`.
 - **Debate format:** an opening round and two rebuttal rounds (`DEBATE_ROUNDS` in `src/config/models.ts`). The
   debate is open: statements carry the speaker's name. Each member sees every earlier round, including their own
   statements.
-- **The vote is blind:** a member's final `## Förslag` section is what goes to the vote. Leader names (full and
+- **The vote is blind:** a member's final speech (without "Herr talman!") is what goes to the vote; sessions from before
+  speeches became single paragraphs use their `## Förslag` section. Leader names (full and
   surname, also in the genitive), party names and abbreviations are redacted. Single-letter abbreviations are only
   removed in parentheses or before a dash, so ordinary words survive. The last-round prompt also asks members not to
   name themselves in their proposal. Voters keep their persona but judge against a rubric (accuracy, reasoning,
@@ -38,7 +39,7 @@ Drizzle on `node:sqlite`.
   are from the 2022 election and need updating to 2026.
 - **One speaker at a time:** the speeches are still generated in parallel. The chamber view follows the speakers'
   list in order (the first unfinished speech is at the rostrum), and you can pick any speech or "Följ live".
-- **Replik arrows** come from names found in a statement's `## Replik` section (full name or surname, also in the
+- **Replik arrows** come from names found in a statement (its `## Replik` section in older sessions; full name or surname, also in the
   genitive).
 - **Sitting numbers:** `riksmöte:N` counts sittings per riksmöte. The riksmöte starts in September.
 - **Sound** is synthesised with Web Audio, off by default, remembered per browser, and not played for replayed events.
@@ -64,7 +65,7 @@ Drizzle on `node:sqlite`.
 
 - [x] Member files for the 8 party leaders plus the Speaker; loader with Zod validation and errors that name the file
 - [x] Debate orchestrator: opening → rebuttal rounds → blind vote → Borda → Speaker; live events per round
-- [x] Swedish prompts; `## Förslag` extraction; identity redaction for the blind vote
+- [x] Swedish prompts; short one-paragraph speeches without headings; identity redaction for the blind vote
 - [x] Claude provider: cached transcript block, per-round usage, plus everything carried over from Majles (retries, refusals, fallback, max_tokens)
 - [x] SQLite schema: members (by hash), sessions (member snapshot), statements, proposals, rankings, verdicts, usage
 - [x] UI: ask page with party chips and a cost estimate, live debate with round tabs and party colours, vote matrix,

@@ -14,6 +14,8 @@ describe("extractProposal", () => {
     expect(extractProposal(rebuttal, 1)).toBe("Gör så här.\nOch så.");
     expect(extractProposal("## Förslag\nA\n## Motivering\nB", 0)).toBe("## Förslag\nA\n## Motivering\nB");
     expect(extractProposal("inga rubriker", 2)).toBe("inga rubriker");
+    expect(extractProposal("Herr talman! Kristersson har fel. Jag föreslår X.", 2)).toBe("Kristersson har fel. Jag föreslår X.");
+    expect(extractProposal("Fru talman! Bygg ut elnätet.", 0)).toBe("Bygg ut elnätet.");
   });
 });
 

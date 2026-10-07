@@ -98,13 +98,14 @@ and a broken file shows its error at the top of every page.
 Each question becomes a numbered sitting, e.g. *Riksdagens protokoll 2026/27:14*. A new riksmöte starts in
 September.
 
-1. **Anföranden (opening speeches):** all members speak in parallel without hearing each other (`## Förslag`,
-   `## Motivering`, `## Risker`). Each speech opens with "Herr talman!", and other leaders are referred to in the
-   third person.
-2. **Replikskifte 1 and 2 (rebuttal rounds):** each member reads the whole debate so far, with names, and writes
-   `## Replik` (answers at least two named opponents), `## Förslag` (their current proposal) and `## Rörelse` (what
-   they changed, or why they stand firm). The transcript is a cached prompt block shared by every member in the round.
-3. **Förberedande votering (preliminary vote):** each member ranks the other members' final `## Förslag`, with
+1. **Anföranden (opening speeches):** all members speak in parallel without hearing each other. Each speech is one
+   short paragraph of running text (at most about 90 words, no headings) that opens with "Herr talman!". Other leaders
+   are referred to in the third person.
+2. **Replikskifte 1 and 2 (rebuttal rounds):** each member reads the whole debate so far, with names, and answers one
+   or two opponents by name, then says where they stand now and whether they changed their mind. This is also one
+   short paragraph, at most about 70 words. The transcript is a cached prompt block shared by every member in the round.
+3. **Förberedande votering (preliminary vote):** each member ranks the other members' final speech (minus "Herr
+   talman!"; the last round's speech ends with a sentence stating the proposal), with
    names, parties and abbreviations removed and in a fresh random order. They score each proposal 1–5 for accuracy,
    reasoning, feasibility and risk awareness, and the ranks are added up with a Borda count.
 4. **Talmannens förslag (the Speaker's proposal):** the Speaker reads the anonymous proposals, the rankings and the

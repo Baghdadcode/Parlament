@@ -49,24 +49,11 @@ export class FakeProvider implements ParlamentProvider {
     this.seen.speak.push(req);
     const m = req.member;
     if (this.opts.failSpeakFor?.[m.id] === req.round) throw new Error(`fake failure: ${m.id} round ${req.round}`);
+    const address = req.address ?? "Herr talman";
     const text =
       req.round === 0
-        ? [
-            "## Förslag",
-            `${req.address ?? "Herr talman"}! Som ${m.name} föreslår jag att ${m.party} tar ansvar för frågan med en tydlig reform. [id:${m.id}]`,
-            "## Motivering",
-            `Det här följer av ${m.short}:s grundvärderingar och av sakläget.`,
-            "## Risker",
-            "Reformen kan bli dyrare än väntat; därför följs den upp årligen.",
-          ].join("\n")
-        : [
-            "## Replik",
-            `${req.address ?? "Herr talman"}! Jag har lyssnat på ${othersIn(req).join(" och ") || "kammaren"} och delar inte deras bild fullt ut.`,
-            "## Förslag",
-            `Mitt förslag efter replikskifte ${req.round}: en finansierad reform som följs upp årligen. [id:${m.id}]`,
-            "## Rörelse",
-            req.round === 1 ? "Jag har lagt till en årlig uppföljning." : "Står fast.",
-          ].join("\n");
+        ? `${address}! Som ${m.name} föreslår jag att ${m.party} tar ansvar för frågan med en tydlig reform. Det följer av ${m.short}:s grundvärderingar, och reformen följs upp årligen så att kostnaderna inte skenar. [id:${m.id}]`
+        : `${address}! Jag har lyssnat på ${othersIn(req).join(" och ") || "kammaren"} och delar inte deras bild fullt ut. ${req.round === 1 ? "Jag har lagt till en årlig uppföljning." : "Jag står fast."} Mitt förslag efter replikskifte ${req.round}: en finansierad reform som följs upp årligen. [id:${m.id}]`;
     await this.stream(text, req.onText);
     return { value: text, usage: usage(req.round === 0 ? "opening" : "debate", m.id, m.model, req.round) };
   }

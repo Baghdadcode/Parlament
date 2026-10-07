@@ -41,15 +41,15 @@ describe("runSession (fake provider)", () => {
     }
   });
 
-  it("votes on each member's final Förslag section, blind, never on their own", async () => {
+  it("votes on each member's final speech, blind, never on their own", async () => {
     const p = new FakeProvider();
     await runSession(base, p);
     for (const req of p.seen.rank) {
       expect(req.answers).toHaveLength(7);
       expect(req.answers.some((a) => a.text.includes(`[id:${req.reviewer.id}]`))).toBe(false);
       for (const a of req.answers) {
-        expect(a.text).toMatch(/^Mitt förslag efter replikskifte 2/);
-        expect(a.text).not.toMatch(/Replik|Rörelse/);
+        expect(a.text).toContain("Mitt förslag efter replikskifte 2");
+        expect(a.text).not.toMatch(/talman!/);
       }
     }
   });
@@ -120,7 +120,7 @@ describe("runSession (fake provider)", () => {
     const p = new FakeProvider();
     const r = await runSession({ ...base, rounds: 0 }, p);
     expect(p.calls.speak).toBe(8);
-    expect(r.answers[0]!.text).toContain("## Motivering");
+    expect(r.answers[0]!.text).toMatch(/^Som .* föreslår jag/);
   });
 
   it("tells every speaker how to address the Speaker", async () => {

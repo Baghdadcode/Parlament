@@ -9,12 +9,12 @@ import type { MemberDef, VotingMode } from "./types";
 const TYPICAL = {
   /** Persona + instructions. */
   system: 1_300,
-  opening: { output: 2_200 },
-  rebuttal: { output: 2_000 },
+  opening: { output: 1_400 },
+  rebuttal: { output: 1_300 },
   /** Tokens one statement adds to the shared transcript. */
-  statement: 650,
+  statement: 180,
   /** A final proposal as a voter reads it. */
-  proposal: 350,
+  proposal: 150,
   rank: { output: 900 },
   talman: { system: 900, output: 3_000, perReviewLine: 60 },
   /** Main vote: reads the Speaker's proposal and its own, answers with a short JSON. */

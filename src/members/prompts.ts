@@ -1,11 +1,8 @@
 import type { LabeledAnswer, MemberDef, ReviewItem, SynthesizeRequest, TranscriptEntry, VoteRequest } from "../core/types";
 
-export const OPENING_WORD_CAP = 400;
-export const REBUTTAL_WORD_CAP = 350;
+export const OPENING_WORD_CAP = 90;
+export const REBUTTAL_WORD_CAP = 70;
 export const BESLUT_WORD_CAP = 700;
-
-export const OPENING_SECTIONS = ["Förslag", "Motivering", "Risker"] as const;
-export const REBUTTAL_SECTIONS = ["Replik", "Förslag", "Rörelse"] as const;
 
 /** Shared, cacheable block. Identical bytes for every call in a session so the prefix cache can hit. */
 export function briefBlock(brief: string): string {
@@ -46,7 +43,7 @@ function personaBlock(member: MemberDef): string {
 function chamberManners(address: string): string {
   return [
     "## Kammarens sed",
-    `- Inled texten under din första rubrik med "${address}!", som i riksdagens kammare.`,
+    `- Inled med "${address}!", som i riksdagens kammare.`,
     '- Tala om de andra partiledarna i tredje person och med namn ("Ulf Kristersson påstår att …"); tilltala dem aldrig med "du".',
     "- Var skarp men saklig, som i en partiledardebatt. Inga personangrepp.",
   ].join("\n");
@@ -65,19 +62,21 @@ export function memberSystem(member: MemberDef, round: number, totalRounds: numb
   ];
   const last = round === totalRounds;
   const finalNote = last
-    ? "Detta är den sista rundan: ditt Förslag här är det som går till votering. Skriv det fristående och komplett, och nämn inte ditt eget namn eller parti i Förslag-avsnittet, eftersom omröstningen är anonym."
+    ? "Detta är den sista rundan: det här inlägget är det som går till votering. Avsluta med en mening som säger exakt vad du föreslår, och nämn inte ditt eget namn eller parti, eftersom omröstningen är anonym."
     : "";
+  const form = [
+    "## Form",
+    `- Ett enda kort stycke löptext, högst ${round === 0 ? OPENING_WORD_CAP : REBUTTAL_WORD_CAP} ord. Det är en hård gräns: hellre kortare.`,
+    "- Inga rubriker, inga punktlistor, ingen fetstil. Bara talad text, som när man står i talarstolen.",
+    "- Skriv på svenska, i första person, i din egen ton.",
+  ];
 
   if (round === 0) {
     return [
       ...common,
-      "## Din uppgift nu: öppningsanförande",
-      "Du har inte hört de andra partiledarna ännu.",
-      `Använd exakt dessa rubriker, i denna ordning: ${OPENING_SECTIONS.map((s) => `"## ${s}"`).join(", ")}.`,
-      "- Förslag: ditt konkreta svar på frågan, i några meningar.",
-      "- Motivering: varför, utifrån dina värderingar och sakläget.",
-      "- Risker: vad som kan gå fel med ditt förslag och hur du hanterar det.",
-      `Håll dig till cirka ${OPENING_WORD_CAP} ord. Skriv på svenska, i första person, i din egen ton.`,
+      "## Din uppgift nu: anförande",
+      "Du har inte hört de andra partiledarna ännu. Säg ditt konkreta svar på frågan och varför, kort och slagkraftigt.",
+      ...form,
       finalNote,
     ]
       .filter(Boolean)
@@ -88,11 +87,8 @@ export function memberSystem(member: MemberDef, round: number, totalRounds: numb
     ...common,
     `## Din uppgift nu: replikskifte ${round} av ${totalRounds}`,
     "Du har läst debatten hittills i <debatt>-blocket, inklusive dina egna tidigare inlägg.",
-    `Använd exakt dessa rubriker, i denna ordning: ${REBUTTAL_SECTIONS.map((s) => `"## ${s}"`).join(", ")}.`,
-    "- Replik: bemöt minst två andra partiledare med namn. Angrip svaga punkter konkret och ge erkännande där det är förtjänt.",
-    "- Förslag: ditt nuvarande förslag, med kort motivering (cirka 100–200 ord). Det ska gå att förstå utan resten av debatten.",
-    '- Rörelse: vad du har ändrat sedan förra rundan och varför, eller "Står fast" och varför.',
-    `Håll dig till cirka ${REBUTTAL_WORD_CAP} ord. Skriv på svenska, i första person, i din egen ton.`,
+    "Bemöt en eller två andra partiledare med namn, med en konkret invändning eller ett erkännande. Säg sedan var du själv står nu, och om du har ändrat dig.",
+    ...form,
     finalNote,
   ]
     .filter(Boolean)
@@ -103,16 +99,20 @@ export function speakUser(question: string): string {
   return `Fråga till riksdagen:\n\n${question.trim()}`;
 }
 
-/** The text that goes to the vote: the whole opening statement, or the "## Förslag" section of a rebuttal. */
+/**
+ * The text that goes to the vote: the member's last speech without its "Herr talman!" opening. Older sessions wrote
+ * rebuttals under headings; for those it is the "## Förslag" section.
+ */
 export function extractProposal(text: string, round: number): string {
-  if (round === 0) return text.trim();
+  const speech = text.trim().replace(/^(Herr|Fru) talman!\s*/i, "");
+  if (round === 0) return speech;
   const lines = text.split("\n");
   const start = lines.findIndex((l) => /^#{1,6}\s*Förslag\s*:?\s*$/i.test(l.trim()));
-  if (start === -1) return text.trim();
+  if (start === -1) return speech;
   const rest = lines.slice(start + 1);
   const end = rest.findIndex((l) => /^#{1,6}\s+\S/.test(l.trim()));
   const section = (end === -1 ? rest : rest.slice(0, end)).join("\n").trim();
-  return section || text.trim();
+  return section || speech;
 }
 
 export const RUBRIC = [

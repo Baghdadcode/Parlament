@@ -59,7 +59,8 @@ describe("ClaudeProvider request shape", () => {
     expect(system[0]!.cache_control).toEqual({ type: "ephemeral" });
     expect(system[1]!.text).toContain("Du spelar Magdalena Andersson");
     expect(system[1]!.text).toContain('"Herr talman!"');
-    expect(system[1]!.text).toContain("öppningsanförande");
+    expect(system[1]!.text).toContain("Din uppgift nu: anförande");
+    expect(system[1]!.text).toContain("Inga rubriker");
     expect(system[1]).not.toHaveProperty("cache_control");
   });
 
